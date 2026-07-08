@@ -1,10 +1,19 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, protocol } = require("electron");
 const path = require("node:path");
 const fsp = require("node:fs/promises");
-const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
 
 const AUDIO_EXT = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".oga", ".weba"];
+const AUDIO_MIME = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".oga": "audio/ogg",
+  ".weba": "audio/webm",
+};
 
 /* Custom protocol used to stream local audio files straight into the
    <audio> element without exposing raw filesystem access to the renderer.
@@ -55,11 +64,53 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  protocol.handle("dkmedia", (request) => {
+  protocol.handle("dkmedia", async (request) => {
     try {
       const url = new URL(request.url);
       const filePath = decodeURIComponent(url.pathname.slice(1));
-      return net.fetch(pathToFileURL(filePath).toString(), { headers: request.headers });
+      const stat = await fsp.stat(filePath);
+      const fileSize = stat.size;
+      const mime = AUDIO_MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+      const range = request.headers.get("range");
+
+      // This is the part that fixes seeking: when the <audio> element asks
+      // to jump to a specific point in the track, it sends a "Range" header
+      // (e.g. "bytes=500000-"). We used to hand this off to net.fetch on a
+      // file:// URL and hope it replied with a proper 206 partial response —
+      // it didn't always, so the player would think the stream had ended
+      // and restart the track. Reading and returning the exact byte slice
+      // ourselves guarantees a correct 206 response every time.
+      if (range) {
+        const match = /bytes=(\d+)-(\d*)/.exec(range);
+        const start = match ? parseInt(match[1], 10) : 0;
+        const end = match && match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+
+        const fh = await fsp.open(filePath, "r");
+        const buf = Buffer.alloc(chunkSize);
+        await fh.read(buf, 0, chunkSize, start);
+        await fh.close();
+
+        return new Response(buf, {
+          status: 206,
+          headers: {
+            "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(chunkSize),
+            "Content-Type": mime,
+          },
+        });
+      }
+
+      const data = await fsp.readFile(filePath);
+      return new Response(data, {
+        status: 200,
+        headers: {
+          "Content-Length": String(fileSize),
+          "Content-Type": mime,
+          "Accept-Ranges": "bytes",
+        },
+      });
     } catch (e) {
       console.warn("dkmedia protocol failed", e);
       return new Response("Not found", { status: 404 });

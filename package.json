@@ -1,7 +1,7 @@
 {
   "name": "dk-player",
   "productName": "DK Player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Player de música local — sem streaming pago, sem navegador no meio.",
   "main": "main.js",
   "license": "MIT",
