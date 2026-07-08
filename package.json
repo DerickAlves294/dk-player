@@ -36,7 +36,8 @@
     "publish": {
       "provider": "github",
       "owner": "DerickAlves294",
-      "repo": "dk-player"
+      "repo": "dk-player",
+      "draft": false
     }
   }
 }
