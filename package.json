@@ -1,0 +1,42 @@
+{
+  "name": "dk-player",
+  "productName": "DK Player",
+  "version": "1.0.0",
+  "description": "Player de música local — sem streaming pago, sem navegador no meio.",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "publish": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.dkplayer.app",
+    "productName": "DK Player",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SEU-USUARIO-GITHUB",
+      "repo": "SEU-REPOSITORIO"
+    }
+  }
+}

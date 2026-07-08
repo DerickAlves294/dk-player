@@ -1,0 +1,15 @@
+# Dependências instaladas via npm — são gigantes e são geradas
+# automaticamente com "npm install", nunca precisam ir pro GitHub
+node_modules/
+
+# Pasta gerada pelo electron-builder quando você roda "npm run dist"
+# ou "npm run publish" — contém o .exe final, também não precisa subir
+dist/
+
+# Arquivos de sistema/editor que não têm nada a ver com o projeto
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+npm-debug.log*

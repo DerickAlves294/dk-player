@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' dkmedia:; img-src 'self' dkmedia: blob: data:; media-src 'self' dkmedia: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self';">
+<title>DK Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="disc" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14.5" fill="#1C2027" stroke="var(--accent)" stroke-width="1.5"/><circle cx="16" cy="16" r="5" fill="var(--accent)"/><circle cx="16" cy="16" r="1.6" fill="#0B0D10"/></svg>
+      <span>DK Player</span>
+    </div>
+    <nav class="nav">
+      <button class="nav-item" data-view="all">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Todas as músicas
+      </button>
+      <button class="nav-item" data-view="artists">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Artistas
+      </button>
+      <button class="nav-item" data-view="albums">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+        Álbuns
+      </button>
+    </nav>
+    <div style="display:flex;flex-direction:column;min-height:0;flex:1;">
+      <div class="nav-section-title">Playlists</div>
+      <div class="playlist-nav-list" id="playlistNavList"></div>
+      <button class="new-playlist-btn" id="newPlaylistBtn">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Nova playlist
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="searchInput" type="text" placeholder="Buscar por música, artista ou álbum" />
+      </div>
+      <div class="spacer"></div>
+      <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
+      <button class="btn btn-ghost" id="changeFolderBtn" style="display:none;font-size:12.5px;">Trocar pasta</button>
+      <button class="add-btn" id="addMusicBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+        Adicionar músicas
+      </button>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+
+  <div class="miniplayer" id="miniplayer" style="display:none;">
+    <div class="mp-track" id="mpTrackInfo">
+      <div class="mp-art" id="mpArt"></div>
+      <div class="mp-meta">
+        <div class="mp-title" id="mpTitle">—</div>
+        <div class="mp-artist" id="mpArtist">—</div>
+      </div>
+    </div>
+    <div class="mp-center">
+      <div class="mp-controls">
+        <button class="ctrl-btn" id="shuffleBtn" title="Modo aleatório">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 5 5-5 5M4 4h7a4 4 0 0 1 4 4v1M4 20h7a4 4 0 0 0 4-4v-1M21 21l-5-5"/></svg>
+        </button>
+        <button class="ctrl-btn" id="prevBtn" title="Anterior">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="play-btn-main" id="playBtn" title="Reproduzir">
+          <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="ctrl-btn" id="nextBtn" title="Próxima">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg>
+        </button>
+        <button class="ctrl-btn" id="repeatBtn" title="Repetir">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button>
+      </div>
+      <div class="mp-progress">
+        <span class="mp-time mono" id="curTime">0:00</span>
+        <div class="seek-bar" id="seekBar"><div class="seek-fill" id="seekFill"></div><div class="seek-handle" id="seekHandle"></div></div>
+        <span class="mp-time mono right" id="durTime">0:00</span>
+      </div>
+    </div>
+    <div class="mp-right">
+      <button class="ctrl-btn" id="queueBtn" title="Fila de reprodução">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h11M3 18h7"/><path d="m17 8 4 4-4 4"/></svg>
+      </button>
+      <div class="volume-wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-dim);flex-shrink:0;" id="volIcon"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <div class="seek-bar" id="volBar"><div class="seek-fill" id="volFill"></div><div class="seek-handle" id="volHandle"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Full screen player -->
+<div class="overlay" id="fullOverlay">
+  <button class="fp-close" id="fpClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  <div class="full-player">
+    <div class="fp-art" id="fpArt"></div>
+    <div class="fp-meta">
+      <div class="fp-title" id="fpTitle">—</div>
+      <div class="fp-artist" id="fpArtist">—</div>
+    </div>
+    <div class="fp-progress">
+      <span class="mp-time mono" id="fpCurTime">0:00</span>
+      <div class="seek-bar" id="fpSeekBar" style="flex:1;"><div class="seek-fill" id="fpSeekFill"></div><div class="seek-handle" id="fpSeekHandle"></div></div>
+      <span class="mp-time mono right" id="fpDurTime">0:00</span>
+    </div>
+    <div class="fp-controls">
+      <button class="ctrl-btn" id="fpShuffleBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 5 5-5 5M4 4h7a4 4 0 0 1 4 4v1M4 20h7a4 4 0 0 0 4-4v-1M21 21l-5-5"/></svg></button>
+      <button class="ctrl-btn" id="fpPrevBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button class="fp-play" id="fpPlayBtn"><svg id="fpPlayIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="ctrl-btn" id="fpNextBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg></button>
+      <button class="ctrl-btn" id="fpRepeatBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+    </div>
+    <div class="fp-bottom-row">
+      <button class="ctrl-btn" id="fpQueueBtn" title="Fila"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h11M3 18h7"/><path d="m17 8 4 4-4 4"/></svg></button>
+      <div class="volume-wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-dim);flex-shrink:0;"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <div class="seek-bar" id="fpVolBar"><div class="seek-fill" id="fpVolFill"></div><div class="seek-handle" id="fpVolHandle"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Queue panel -->
+<div class="queue-panel" id="queuePanel">
+  <div class="queue-header">
+    <h3>Fila de reprodução</h3>
+    <div class="queue-header-actions">
+      <button id="queueClearBtn" class="queue-clear-btn" title="Limpar fila">Limpar</button>
+      <button id="queueCloseBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+  </div>
+  <div class="queue-list" id="queueList"></div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="ctxRoot"></div>
+<div id="toastRoot" style="position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+
+<audio id="audio" preload="metadata"></audio>
+
+<script src="app.js"></script>
+</body>
+</html>
