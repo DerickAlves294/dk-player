@@ -150,12 +150,16 @@ const S = {
   detailKey:null,      // artist name / album name / playlist id currently open
   search:"",
   playlists:[],        // {id,name,image,trackIds:[]}
-  queue:[],             // array of track ids
+  artistOrder:{},       // {artistName: [trackId, ...]} — ordem custom definida pelo usuário na tela do artista
+  queue:[],             // array of track ids (ordem que está tocando de fato)
+  unshuffledQueue:[],   // mesma fila, mas na ordem "natural" (pré-embaralho) — guardada
+                         // pra poder restaurar quando o modo aleatório é desligado
   queueIndex:-1,
   shuffle:false,
   repeat:"off",        // off | all | one
   volume:0.9,
   isPlaying:false,
+  appVersion:null,
 };
 
 const audio = document.getElementById("audio");
@@ -175,7 +179,7 @@ function schedulePlaybackSave(){
 async function savePlaybackState(){
   await Store.set("playback-state", {
     volume:S.volume, shuffle:S.shuffle, repeat:S.repeat,
-    queueIds:S.queue, queueIndex:S.queueIndex,
+    queueIds:S.queue, queueIndex:S.queueIndex, unshuffledQueueIds:S.unshuffledQueue,
     lastTrackId: currentTrack() ? currentTrack().id : null,
     lastPosition: audio.currentTime||0,
   });
@@ -195,6 +199,53 @@ async function savePlaylists(){
 async function loadPlaylists(){
   const pl = await Store.get("playlists");
   S.playlists = Array.isArray(pl) ? pl : [];
+}
+
+/* ============================================================
+   ORDEM CUSTOM DAS MÚSICAS NA TELA DE CADA ARTISTA
+   (mesma ideia da ordem de faixas em playlists, mas guardada por nome
+   de artista em vez de por playlist)
+============================================================ */
+async function saveArtistOrder(){
+  await Store.set("artistOrder", S.artistOrder);
+}
+async function loadArtistOrder(){
+  const o = await Store.get("artistOrder");
+  S.artistOrder = (o && typeof o==="object" && !Array.isArray(o)) ? o : {};
+}
+/* Retorna as faixas do artista na ordem custom salva (se existir); faixas
+   novas que ainda não têm posição salva aparecem no final, na ordem em
+   que vieram. */
+function orderedArtistTracks(artist, tracks){
+  const order = S.artistOrder[artist];
+  if(!order || !order.length) return tracks;
+  const map = new Map(tracks.map(t=>[t.id,t]));
+  const ordered = order.map(id=>map.get(id)).filter(Boolean);
+  const knownIds = new Set(order);
+  const newOnes = tracks.filter(t=>!knownIds.has(t.id));
+  return [...ordered, ...newOnes];
+}
+function ensureArtistOrder(artist, tracksInCurrentOrder){
+  if(!S.artistOrder[artist]) S.artistOrder[artist] = tracksInCurrentOrder.map(t=>t.id);
+  return S.artistOrder[artist];
+}
+async function moveArtistTrack(artist, index, dir){
+  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>t.artist===artist));
+  const order = ensureArtistOrder(artist, tracks);
+  const newIndex = index+dir;
+  if(newIndex<0 || newIndex>=order.length) return;
+  [order[index], order[newIndex]] = [order[newIndex], order[index]];
+  await saveArtistOrder();
+  render();
+}
+async function reorderArtistTrack(artist, from, to){
+  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>t.artist===artist));
+  const order = ensureArtistOrder(artist, tracks);
+  if(from===to || isNaN(from) || isNaN(to)) return;
+  const [moved] = order.splice(from,1);
+  order.splice(to,0,moved);
+  await saveArtistOrder();
+  render();
 }
 
 /* ============================================================
@@ -246,6 +297,9 @@ async function scanDirectoryImpl(){
   S.queue = S.queue.filter(id=>validIds.has(id));
   if(S.queueIndex>=S.queue.length) S.queueIndex = S.queue.length-1;
   S.playlists.forEach(p=> p.trackIds = p.trackIds.filter(id=>validIds.has(id)));
+  Object.keys(S.artistOrder).forEach(artist=>{
+    S.artistOrder[artist] = S.artistOrder[artist].filter(id=>validIds.has(id));
+  });
 
   updateStatusPill();
   render();
@@ -310,9 +364,16 @@ document.getElementById("addMusicBtn").addEventListener("click", async ()=>{
 ============================================================ */
 async function init(){
   await loadPlaylists();
+  await loadArtistOrder();
   const st = await loadPlaybackState();
   updateShuffleRepeatUI();
   setVolumeUI(S.volume);
+
+  window.dkAPI.getAppVersion().then(v=>{
+    S.appVersion = v;
+    const tag = document.getElementById("sidebarVersionTag");
+    if(tag) tag.textContent = "v"+v;
+  }).catch(()=>{});
 
   // Electron apps get direct filesystem access — no permission dance,
   // no "click to reconnect" screen. We just verify the remembered folder
@@ -327,6 +388,7 @@ async function init(){
 
   if(st && st.queueIds && st.queueIds.length){
     S.queue = st.queueIds;
+    S.unshuffledQueue = (st.unshuffledQueueIds && st.unshuffledQueueIds.length) ? st.unshuffledQueueIds : st.queueIds.slice();
     S.queueIndex = st.queueIndex ?? -1;
     renderQueue();
     // don't auto-play on load; just prep so the mini player can show last track info
@@ -449,10 +511,11 @@ function render(){
     } else html += emptyStateHtml("all");
   }
   else if(S.view==="artist-detail"){
-    const tracks = filteredTracks(S.tracks.filter(t=>t.artist===S.detailKey));
+    const rawTracks = S.tracks.filter(t=>t.artist===S.detailKey);
+    const tracks = filteredTracks(orderedArtistTracks(S.detailKey, rawTracks));
     html += `<button class="back-link" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>Artistas</button>`;
     html += `<div class="content-header"><div><div class="content-title">${escapeHtml(S.detailKey)}</div><div class="content-sub">${tracks.length} faixas</div></div></div>`;
-    html += tracks.length ? trackRowsHtml(tracks) : emptyStateHtml("all");
+    html += tracks.length ? trackRowsHtml(tracks, {artistKey:S.detailKey, reorderable: !S.search.trim()}) : emptyStateHtml("all");
   }
   else if(S.view==="album-detail"){
     const tracks = filteredTracks(S.tracks.filter(t=>t.album===S.detailKey));
@@ -487,18 +550,25 @@ function render(){
         <button class="btn btn-ghost" id="deletePlaylistBtn" style="color:var(--danger)">Excluir</button>
       </div>
     </div>`;
-    html += tracks.length ? trackRowsHtml(tracks, p.id, !S.search.trim()) : emptyStateHtml("playlist");
+    html += tracks.length ? trackRowsHtml(tracks, {playlistId:p.id, reorderable: !S.search.trim()}) : emptyStateHtml("playlist");
   }
 
   content.innerHTML = html;
   attachContentEvents();
 }
 
-function trackRowsHtml(tracks, playlistId, reorderable){
+/* opts: {playlistId, artistKey, reorderable}
+   playlistId -> reordenação persiste em S.playlists (e habilita "remover da
+   playlist" no clique direito); artistKey -> persiste em S.artistOrder. */
+function trackRowsHtml(tracks, opts){
+  opts = opts || {};
+  const reorderable = !!opts.reorderable;
+  const reorderType = opts.playlistId ? "playlist" : (opts.artistKey ? "artist" : "");
+  const reorderKey = opts.playlistId || opts.artistKey || "";
   return `<div class="track-rows">` + tracks.map((t,i)=>{
     const isPlaying = currentTrack() && currentTrack().id===t.id;
     return `
-    <div class="track-row ${isPlaying?"playing":""} ${reorderable?"reorderable":""}" data-track-id="${t.id}" data-playlist-context="${playlistId||""}" ${reorderable?`draggable="true" data-row-index="${i}"`:""}>
+    <div class="track-row ${isPlaying?"playing":""} ${reorderable?"reorderable":""}" data-track-id="${t.id}" data-playlist-context="${opts.playlistId||""}" ${reorderable?`draggable="true" data-row-index="${i}" data-reorder-type="${reorderType}" data-reorder-key="${escapeHtml(reorderKey)}"`:""}>
       <div class="idx"><span class="row-num">${i+1}</span><span class="row-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
       <div class="row-art">${artHtml(t)}</div>
       <div class="row-title">${escapeHtml(t.title)}</div>
@@ -533,6 +603,16 @@ async function reorderPlaylistTrack(playlistId, from, to){
   await savePlaylists();
   render();
 }
+/* Roteia pro tipo certo de reordenação (playlist ou artista) com base no
+   contexto salvo em data-reorder-type/data-reorder-key na linha clicada. */
+function moveOrderedTrack(type, key, index, dir){
+  if(type==="playlist") return movePlaylistTrack(key, index, dir);
+  if(type==="artist") return moveArtistTrack(key, index, dir);
+}
+function reorderOrderedTrack(type, key, from, to){
+  if(type==="playlist") return reorderPlaylistTrack(key, from, to);
+  if(type==="artist") return reorderArtistTrack(key, from, to);
+}
 
 function attachContentEvents(){
   const content = document.getElementById("content");
@@ -556,7 +636,7 @@ function attachContentEvents(){
     el.addEventListener("click", e=>{
       e.stopPropagation();
       const row = el.closest(".track-row");
-      movePlaylistTrack(row.dataset.playlistContext, parseInt(el.dataset.moveRow,10), parseInt(el.dataset.dir,10));
+      moveOrderedTrack(row.dataset.reorderType, row.dataset.reorderKey, parseInt(el.dataset.moveRow,10), parseInt(el.dataset.dir,10));
     });
   });
   content.querySelectorAll(".track-row.reorderable").forEach(el=>{
@@ -567,7 +647,7 @@ function attachContentEvents(){
       e.preventDefault(); el.classList.remove("drag-over");
       const from = parseInt(e.dataTransfer.getData("text/plain"),10);
       const to = parseInt(el.dataset.rowIndex,10);
-      reorderPlaylistTrack(el.dataset.playlistContext, from, to);
+      reorderOrderedTrack(el.dataset.reorderType, el.dataset.reorderKey, from, to);
     });
   });
   content.querySelectorAll("[data-artist]").forEach(el=>{
@@ -602,7 +682,7 @@ function attachContentEvents(){
 function playTrackFromContext(trackId){
   let contextTracks;
   if(S.view==="all") contextTracks = filteredTracks(S.tracks);
-  else if(S.view==="artist-detail") contextTracks = S.tracks.filter(t=>t.artist===S.detailKey);
+  else if(S.view==="artist-detail") contextTracks = orderedArtistTracks(S.detailKey, S.tracks.filter(t=>t.artist===S.detailKey));
   else if(S.view==="album-detail") contextTracks = S.tracks.filter(t=>t.album===S.detailKey);
   else if(S.view==="playlist-detail"){
     const p = S.playlists.find(pl=>pl.id===S.detailKey);
@@ -610,6 +690,7 @@ function playTrackFromContext(trackId){
   } else contextTracks = S.tracks;
 
   S.queue = contextTracks.map(t=>t.id);
+  S.unshuffledQueue = S.queue.slice();
   S.queueIndex = S.queue.indexOf(trackId);
   if(S.shuffle) shuffleQueueKeepingCurrent();
   loadAndPlay(S.queueIndex);
@@ -617,6 +698,12 @@ function playTrackFromContext(trackId){
 }
 
 function shuffleQueueKeepingCurrent(){
+  // Se nada estiver tocando (fila vazia ou nenhum índice atual), não há
+  // "atual" pra manter na frente — embaralhar aqui geraria uma fila com um
+  // item "undefined" na primeira posição. Nesse caso só marcamos o modo
+  // aleatório; a fila real é montada (já embaralhada) quando o usuário
+  // tocar uma música, em playTrackFromContext().
+  if(S.queueIndex<0 || S.queueIndex>=S.queue.length) return;
   const current = S.queue[S.queueIndex];
   const rest = S.queue.filter((_,i)=>i!==S.queueIndex);
   for(let i=rest.length-1;i>0;i--){
@@ -745,23 +832,58 @@ function bindVolBar(barId){
 }
 bindVolBar("volBar"); bindVolBar("fpVolBar");
 
+// Dois ícones diferentes pro botão de repetir: o mesmo loop de setas nos
+// dois casos, mas "repetir a música atual" ganha um "1" no meio — assim dá
+// pra diferenciar visualmente os dois estados (não só pela cor "ativo").
+const REPEAT_ALL_ICON = `<path d="m17 2 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>`;
+const REPEAT_ONE_ICON = `<path d="m17 2 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="15.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="currentColor" stroke="none" font-family="'Manrope',sans-serif">1</text>`;
 function updateShuffleRepeatUI(){
   document.getElementById("shuffleBtn").classList.toggle("on", S.shuffle);
   document.getElementById("fpShuffleBtn").classList.toggle("on", S.shuffle);
-  const repeatIconOne = S.repeat==="one";
+  const icon = S.repeat==="one" ? REPEAT_ONE_ICON : REPEAT_ALL_ICON;
   [document.getElementById("repeatBtn"), document.getElementById("fpRepeatBtn")].forEach(btn=>{
     btn.classList.toggle("on", S.repeat!=="off");
     btn.title = S.repeat==="off"?"Repetir":S.repeat==="all"?"Repetir todas":"Repetir música atual";
+    btn.querySelector("svg").innerHTML = icon;
   });
 }
 function toggleShuffle(){
   S.shuffle=!S.shuffle;
-  if(S.shuffle) shuffleQueueKeepingCurrent();
-  updateShuffleRepeatUI(); schedulePlaybackSave(); renderQueue();
+  if(S.shuffle){
+    // guarda a ordem "natural" atual antes de embaralhar, pra poder
+    // restaurar depois quando o usuário desligar o aleatório
+    S.unshuffledQueue = S.queue.slice();
+    shuffleQueueKeepingCurrent();
+  } else {
+    // desligar tem que voltar a fila pra ordem normal — antes isso não
+    // acontecia, então a fila continuava embaralhada mesmo com o botão
+    // apagado. A música que já está tocando não é mexida, só a ordem
+    // das próximas músicas na fila.
+    restoreUnshuffledQueue();
+  }
+  // Aplica e confirma imediatamente, sem depender de nenhuma outra ação
+  // (como clicar numa música) pra "atualizar" — o clique sozinho já basta.
+  updateShuffleRepeatUI();
+  renderQueue();
+  savePlaybackState();
+  showToast(S.shuffle ? "Modo aleatório ativado" : "Modo aleatório desativado");
+}
+function restoreUnshuffledQueue(){
+  const current = currentTrack();
+  if(S.unshuffledQueue && S.unshuffledQueue.length){
+    S.queue = S.unshuffledQueue.slice();
+  }
+  if(current){
+    const idx = S.queue.indexOf(current.id);
+    if(idx>=0) S.queueIndex = idx;
+  }
 }
 function cycleRepeat(){
   S.repeat = S.repeat==="off"?"all":S.repeat==="all"?"one":"off";
-  updateShuffleRepeatUI(); schedulePlaybackSave();
+  updateShuffleRepeatUI();
+  savePlaybackState();
+  const labels = {off:"Repetição desativada", all:"Repetindo todas as músicas", one:"Repetindo a música atual"};
+  showToast(labels[S.repeat]);
 }
 
 document.getElementById("playBtn").addEventListener("click", togglePlay);
@@ -1017,6 +1139,90 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
 }
 
 /* ============================================================
+   SOBRE + HISTÓRICO DE VERSÕES
+   Toda vez que uma nova versão for publicada (npm run publish), adicione
+   uma entrada NOVA no topo desta lista (mais recente primeiro) descrevendo
+   o que mudou — é esse texto que aparece tanto no modal "Sobre" quanto,
+   automaticamente, na telinha de "nova versão disponível" caso o campo de
+   notas do release do GitHub esteja vazio.
+============================================================ */
+const CHANGELOG = [
+  { version:"1.0.2", date:"2026", notes:"• Corrige o modo aleatório, que continuava tocando músicas fora de ordem mesmo depois de desativado.\n• Ícone de repetição diferente pra 'repetir todas' e 'repetir música atual'.\n• Tela 'Sobre' agora é em tela cheia, com botão de voltar e Esc pra fechar." },
+  { version:"1.0.1", date:"2026", notes:"Corrige bug da barra de progresso e adiciona ícone do app." },
+  { version:"1.0.0", date:"2026", notes:"Lançamento inicial do DK Player." },
+];
+
+// Tela cheia (não é mais um modal/pop-up): sólida, minimalista, com botão
+// de voltar no canto superior esquerdo. Fecha também com Esc (ver o
+// keydown handler mais abaixo, no bloco de atalhos de teclado).
+function openAboutScreen(){
+  const version = S.appVersion || CHANGELOG[0]?.version || "";
+  document.getElementById("aboutScreenName").innerHTML =
+    `DK Player${version?`<span class="about-screen-version">v${escapeHtml(version)}</span>`:""}`;
+  document.getElementById("aboutScreenChangelog").innerHTML = `
+    <div class="about-screen-changelog-title">Histórico de versões</div>
+    ${CHANGELOG.map(c=>`
+      <div class="about-screen-changelog-entry">
+        <span class="about-screen-changelog-version">v${escapeHtml(c.version)}</span><span class="about-screen-changelog-date">${escapeHtml(c.date)}</span>
+        <div class="about-screen-changelog-notes">${escapeHtml(c.notes)}</div>
+      </div>`).join("")}`;
+  document.getElementById("aboutScreen").classList.add("show");
+}
+function closeAboutScreen(){
+  document.getElementById("aboutScreen").classList.remove("show");
+}
+document.getElementById("aboutBtn").addEventListener("click", openAboutScreen);
+document.getElementById("aboutBackBtn").addEventListener("click", closeAboutScreen);
+
+/* ============================================================
+   ATUALIZAÇÕES (auto-updater)
+   O main.js manda "update-available" quando encontra uma versão nova no
+   GitHub (sem baixar nada sozinho) e "update-downloaded" quando o download
+   termina. Aqui a gente só decide o que mostrar em cada etapa.
+============================================================ */
+function openUpdateAvailableModal(version, notes){
+  const root = document.getElementById("modalRoot");
+  const fallback = CHANGELOG.find(c=>c.version===version);
+  const text = (notes && notes.trim()) || fallback?.notes || "Melhorias e correções de bugs.";
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal modal-lg">
+        <h3>Nova versão disponível — v${escapeHtml(version)}</h3>
+        <div class="changelog-notes" style="margin-bottom:20px;">${escapeHtml(text)}</div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="updateLaterBtn">Depois</button>
+          <button class="btn btn-primary" id="updateNowBtn">Atualizar agora</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("updateLaterBtn").addEventListener("click", ()=> root.innerHTML="");
+  document.getElementById("updateNowBtn").addEventListener("click", ()=>{
+    const btn = document.getElementById("updateNowBtn");
+    btn.textContent = "Baixando...";
+    btn.disabled = true;
+    window.dkAPI.startUpdateDownload();
+  });
+}
+function openUpdateReadyModal(){
+  const root = document.getElementById("modalRoot");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal">
+        <h3>Atualização baixada com sucesso!</h3>
+        <p>A nova versão será instalada assim que o DK Player reiniciar.</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="restartLaterBtn">Depois</button>
+          <button class="btn btn-primary" id="restartNowBtn">Reiniciar agora</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("restartLaterBtn").addEventListener("click", ()=> root.innerHTML="");
+  document.getElementById("restartNowBtn").addEventListener("click", ()=> window.dkAPI.installUpdateNow());
+}
+window.dkAPI.onUpdateAvailable(({version, notes})=> openUpdateAvailableModal(version, notes));
+window.dkAPI.onUpdateDownloaded(()=> openUpdateReadyModal());
+
+/* ============================================================
    SEARCH
 ============================================================ */
 document.getElementById("searchInput").addEventListener("input", e=>{
@@ -1036,6 +1242,11 @@ document.addEventListener("keydown", e=>{
   }
 
   if(e.key==="Escape"){
+    const aboutScreen = document.getElementById("aboutScreen");
+    if(aboutScreen.classList.contains("show")){
+      closeAboutScreen();
+      return;
+    }
     const overlay = document.getElementById("fullOverlay");
     if(overlay.classList.contains("show")){
       overlay.classList.remove("show");

@@ -41,6 +41,9 @@ async function writeConfig(cfg) {
   await fsp.writeFile(configPath(), JSON.stringify(cfg), "utf-8");
 }
 
+// Referência à janela principal, usada pra mandar eventos de update pro renderer
+let mainWindow = null;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -61,7 +64,33 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow = win;
+  win.on("closed", () => { if (mainWindow === win) mainWindow = null; });
 }
+
+/* ============================================================
+   AUTO UPDATE
+   Controle manual (autoDownload = false) em vez de checkForUpdatesAndNotify():
+   assim a gente decide exatamente o que mostrar em cada etapa (tela de "nova
+   versão disponível" com as novidades, e tela de "atualização concluída"),
+   em vez de depender da notificação nativa silenciosa do Windows.
+============================================================ */
+autoUpdater.autoDownload = false;
+
+autoUpdater.on("update-available", (info) => {
+  mainWindow?.webContents.send("update-available", {
+    version: info.version,
+    notes: typeof info.releaseNotes === "string" ? info.releaseNotes : "",
+  });
+});
+
+autoUpdater.on("update-downloaded", () => {
+  mainWindow?.webContents.send("update-downloaded");
+});
+
+autoUpdater.on("error", (err) => {
+  console.warn("erro no autoUpdater:", err);
+});
 
 app.whenReady().then(() => {
   protocol.handle("dkmedia", async (request) => {
@@ -194,12 +223,27 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle("get-app-version", () => app.getVersion());
+
+  // O renderer chama isso quando o usuário clica em "Atualizar agora" na
+  // telinha de nova versão disponível.
+  ipcMain.handle("start-update-download", () => {
+    autoUpdater.downloadUpdate().catch((e) => console.warn("download update failed", e));
+  });
+
+  // O renderer chama isso quando o usuário clica em "Reiniciar agora" na
+  // telinha de atualização concluída.
+  ipcMain.handle("install-update-now", () => {
+    autoUpdater.quitAndInstall();
+  });
+
   createWindow();
 
-  // Verifica se existe uma versão mais nova publicada e, se sim, baixa em
-  // segundo plano e instala automaticamente na próxima vez que o app abrir.
+  // Só verifica se existe uma versão mais nova publicada — não baixa nada
+  // sozinho. O download só começa quando o usuário aceita na telinha de
+  // "nova versão disponível" (ver evento "update-available" acima).
   // Só funciona em builds instalados via .exe (NSIS), não em `npm start`.
-  autoUpdater.checkForUpdatesAndNotify().catch((e) => {
+  autoUpdater.checkForUpdates().catch((e) => {
     console.warn("check for updates failed", e);
   });
 

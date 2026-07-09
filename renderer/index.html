@@ -39,6 +39,11 @@
         Nova playlist
       </button>
     </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-version" id="sidebarVersionTag">v1.0.1</div>
+      <div class="sidebar-dev">Desenvolvido por <strong>Dérick Alves</strong></div>
+      <button class="sidebar-about-btn" id="aboutBtn">Sobre o DK Player</button>
+    </div>
   </aside>
 
   <div class="main">
@@ -143,6 +148,21 @@
     </div>
   </div>
   <div class="queue-list" id="queueList"></div>
+</div>
+
+<!-- Sobre (tela cheia) -->
+<div class="about-screen" id="aboutScreen">
+  <button class="about-back-btn" id="aboutBackBtn" title="Voltar (Esc)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+  <div class="about-screen-content">
+    <div class="about-screen-icon">
+      <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14.5" fill="#1C2027" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="16" r="5" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="#0B0D10"/></svg>
+    </div>
+    <div class="about-screen-name" id="aboutScreenName">DK Player</div>
+    <div class="about-screen-sub">Desenvolvido por <strong>Dérick Alves</strong></div>
+    <div class="about-screen-changelog" id="aboutScreenChangelog"></div>
+  </div>
 </div>
 
 <div id="modalRoot"></div>

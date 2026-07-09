@@ -24,4 +24,13 @@ contextBridge.exposeInMainWorld("dkAPI", {
   // Small sync helpers
   basename: (p) => path.basename(p),
   mediaUrl: (filePath) => "dkmedia://local/" + encodeURIComponent(filePath),
+
+  // Auto update: versão atual do app + fluxo manual de atualização
+  // (o renderer decide o que mostrar em cada etapa em vez de depender
+  // da notificação silenciosa padrão do electron-updater)
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+  onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (e, data) => callback(data)),
+  onUpdateDownloaded: (callback) => ipcRenderer.on("update-downloaded", () => callback()),
+  startUpdateDownload: () => ipcRenderer.invoke("start-update-download"),
+  installUpdateNow: () => ipcRenderer.invoke("install-update-now"),
 });
