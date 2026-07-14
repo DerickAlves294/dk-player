@@ -3,6 +3,13 @@ const path = require("node:path");
 const fsp = require("node:fs/promises");
 const { autoUpdater } = require("electron-updater");
 
+// "Ouvir Junto" (WebRTC): por padrão o Chromium esconde o IP local por trás
+// de um endereço mDNS (privacidade), mas isso às vezes falha silenciosamente
+// pra resolver entre duas instâncias do MESMO PC — a conexão simplesmente
+// nunca fecha, sem erro nenhum. Isso precisa ser setado antes do app ficar
+// pronto. Não afeta nada além da parte de sincronização.
+app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
+
 const AUDIO_EXT = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".oga", ".weba"];
 const AUDIO_MIME = {
   ".mp3": "audio/mpeg",
@@ -127,6 +134,7 @@ app.whenReady().then(() => {
             "Accept-Ranges": "bytes",
             "Content-Length": String(chunkSize),
             "Content-Type": mime,
+            "Access-Control-Allow-Origin": "*",
           },
         });
       }
@@ -138,6 +146,7 @@ app.whenReady().then(() => {
           "Content-Length": String(fileSize),
           "Content-Type": mime,
           "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
         },
       });
     } catch (e) {
@@ -162,14 +171,97 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("scan-folder", async (event, folderPath) => {
+    const results = [];
+    // Anda recursivamente por todas as subpastas dentro da pasta escolhida
+    // (ex: pastas de playlist criadas pelo próprio app) e junta tudo numa
+    // lista só. Antes só lia o primeiro nível, por isso músicas dentro de
+    // subpastas não apareciam na biblioteca.
+    async function walk(dir) {
+      let entries;
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch (e) {
+        console.warn("scan-folder: falha ao ler", dir, e);
+        return;
+      }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+        } else if (entry.isFile() && AUDIO_EXT.includes(path.extname(entry.name).toLowerCase())) {
+          results.push({ name: entry.name, path: full });
+        }
+      }
+    }
+    await walk(folderPath);
+    return results;
+  });
+
+  // ============================================================
+  // PASTAS DE PLAYLIST — cada playlist ganha uma subpasta física dentro
+  // da biblioteca, e o arquivo da música é movido pra lá na PRIMEIRA vez
+  // que ela entra em alguma playlist (fica só nessa pasta; se entrar em
+  // outra playlist depois, só é referenciada lá, sem duplicar/mover de novo).
+  // ============================================================
+  function sanitizeFolderName(name) {
+    // remove caracteres inválidos em nomes de pasta no Windows
+    return String(name).replace(/[\\/:*?"<>|]/g, "").trim().slice(0, 120) || "Playlist";
+  }
+
+  ipcMain.handle("ensure-playlist-folder", async (event, libraryPath, playlistName) => {
+    // Todas as pastas de playlist ficam dentro de uma pasta-mãe "Playlist",
+    // pra não espalhar pastas soltas na raiz da biblioteca.
+    const folder = path.join(libraryPath, "Playlist", sanitizeFolderName(playlistName));
+    await fsp.mkdir(folder, { recursive: true });
+    return folder;
+  });
+
+  ipcMain.handle("move-file-to-folder", async (event, filePath, destFolder) => {
     try {
-      const entries = await fsp.readdir(folderPath, { withFileTypes: true });
-      return entries
-        .filter((e) => e.isFile() && AUDIO_EXT.includes(path.extname(e.name).toLowerCase()))
-        .map((e) => ({ name: e.name, path: path.join(folderPath, e.name) }));
+      const destPath0 = path.join(destFolder, path.basename(filePath));
+      if (path.resolve(destPath0) === path.resolve(filePath)) return filePath; // já está lá
+
+      // evita sobrescrever um arquivo diferente que já exista com o mesmo nome
+      let destPath = destPath0;
+      let n = 1;
+      while (true) {
+        try { await fsp.access(destPath); }
+        catch (e) { break; } // não existe, pode usar esse caminho
+        const ext = path.extname(destPath0);
+        const base = path.basename(destPath0, ext);
+        destPath = path.join(destFolder, `${base} (${n})${ext}`);
+        n++;
+      }
+
+      try {
+        await fsp.rename(filePath, destPath);
+      } catch (e) {
+        // rename falha se origem/destino estão em discos diferentes — copia e apaga o original
+        await fsp.copyFile(filePath, destPath);
+        await fsp.unlink(filePath);
+      }
+      return destPath;
     } catch (e) {
-      console.warn("scan-folder failed", e);
-      return [];
+      console.warn("move-file-to-folder falhou", e);
+      return null;
+    }
+  });
+
+  // Ao excluir uma playlist: apaga a pasta dela SÓ SE ela estiver vazia
+  // (as músicas já devem ter sido movidas de volta pra origem antes disso
+  // — ver deletePlaylistAndRestoreFiles no app.js). Se sobrou algo lá
+  // dentro (por segurança), não apaga nada e avisa o renderer.
+  ipcMain.handle("delete-folder-if-empty", async (event, folderPath) => {
+    try {
+      const entries = await fsp.readdir(folderPath);
+      if (entries.length === 0) {
+        await fsp.rmdir(folderPath);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn("delete-folder-if-empty falhou", e);
+      return false;
     }
   });
 
@@ -186,6 +278,19 @@ app.whenReady().then(() => {
       return new Uint8Array(0);
     } finally {
       if (fh) await fh.close();
+    }
+  });
+
+  // "Ouvir Junto": lê o arquivo de música inteiro de uma vez, pra mandar
+  // pro amigo pela conexão (ver sync.js). Arquivos de música costumam ter
+  // no máximo algumas dezenas de MB, então ler tudo de uma vez é tranquilo.
+  ipcMain.handle("read-file-buffer", async (event, filePath) => {
+    try {
+      const data = await fsp.readFile(filePath);
+      return new Uint8Array(data);
+    } catch (e) {
+      console.warn("read-file-buffer failed", e);
+      return null;
     }
   });
 

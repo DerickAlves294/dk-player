@@ -12,9 +12,17 @@ contextBridge.exposeInMainWorld("dkAPI", {
   // Library scanning + ID3 byte reads
   scanFolder: (folderPath) => ipcRenderer.invoke("scan-folder", folderPath),
   readFileRange: (filePath, start, length) => ipcRenderer.invoke("read-file-range", filePath, start, length),
+  readFileBuffer: (filePath) => ipcRenderer.invoke("read-file-buffer", filePath),
 
   // Copying newly picked files into the library folder
   copyFilesIntoFolder: (filePaths, destFolder) => ipcRenderer.invoke("copy-files-into-folder", filePaths, destFolder),
+
+  // Pastas de playlist: cria a subpasta física da playlist e move um
+  // arquivo de música pra dentro dela (só na primeira playlist que a
+  // música entrar — ver lógica em app.js).
+  ensurePlaylistFolder: (libraryPath, playlistName) => ipcRenderer.invoke("ensure-playlist-folder", libraryPath, playlistName),
+  moveFileToFolder: (filePath, destFolder) => ipcRenderer.invoke("move-file-to-folder", filePath, destFolder),
+  deleteFolderIfEmpty: (folderPath) => ipcRenderer.invoke("delete-folder-if-empty", folderPath),
 
   // Remembering which folder is the library, across app restarts —
   // no permission prompts involved, this is a plain saved path.

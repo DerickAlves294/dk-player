@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' dkmedia:; img-src 'self' dkmedia: blob: data:; media-src 'self' dkmedia: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' dkmedia:; img-src 'self' dkmedia: blob: data:; media-src 'self' dkmedia: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' ws: wss:;">
 <title>DK Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -55,6 +55,8 @@
       <div class="spacer"></div>
       <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
       <button class="btn btn-ghost" id="changeFolderBtn" style="display:none;font-size:12.5px;">Trocar pasta</button>
+      <div id="partyStatusRoot"></div>
+      <button class="btn btn-ghost" id="partyBtn" style="font-size:12.5px;">Ouvir Junto</button>
       <button class="add-btn" id="addMusicBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar músicas
@@ -169,8 +171,9 @@
 <div id="ctxRoot"></div>
 <div id="toastRoot" style="position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
 
-<audio id="audio" preload="metadata"></audio>
+<audio id="audio" preload="metadata" crossorigin="anonymous"></audio>
 
 <script src="app.js"></script>
+<script src="sync.js"></script>
 </body>
 </html>

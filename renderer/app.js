@@ -92,20 +92,83 @@ function decodeText(bytes, encoding){
     }
   }catch(e){ return ""; }
 }
+function removeUnsync(bytes){
+  // Desfaz o "byte stuffing" da unsynchronisation do ID3v2: todo 0xFF
+  // seguido de 0x00 vira só 0xFF. Sem isso, qualquer 0xFF seguido de certos
+  // bytes (MUITO comum em JPEG, que começa com FF D8 FF E0) desloca todo o
+  // resto da tag, corrompendo os dados da capa mesmo com o tamanho do frame
+  // correto.
+  const out = new Uint8Array(bytes.length);
+  let j=0;
+  for(let i=0;i<bytes.length;i++){
+    out[j++] = bytes[i];
+    if(bytes[i]===0xFF && bytes[i+1]===0x00) i++;
+  }
+  return out.subarray(0,j);
+}
+const ID3_DEBUG = false;
 async function parseID3(filePath){
-  const meta = {title:null, artist:null, album:null, coverUrl:null};
+  const meta = {title:null, artist:null, album:null, coverUrl:null, coverBytes:null, coverMime:null};
+  const dbg = (...a)=>{ if(ID3_DEBUG) console.log("[ID3]", filePath.split(/[\\/]/).pop(), ...a); };
   try{
     const head = await window.dkAPI.readFileRange(filePath, 0, 10);
-    if(head.length<10 || String.fromCharCode(head[0],head[1],head[2]) !== "ID3") return meta;
+    if(head.length<10 || String.fromCharCode(head[0],head[1],head[2]) !== "ID3"){
+      dbg("sem tag ID3 (ou header curto)", head.length, head.length>=3?String.fromCharCode(head[0],head[1],head[2]):"?");
+      return meta;
+    }
+    const majorVersion = head[3]; // 3 = ID3v2.3, 4 = ID3v2.4
+    const tagFlags = head[5];
+    const tagUnsync = !!(tagFlags & 0x80);
+    const hasExtHeader = !!(tagFlags & 0x40);
     const size = readSynchsafe(head,6);
-    const buf = await window.dkAPI.readFileRange(filePath, 10, size);
+    dbg("header ok", {majorVersion, tagFlags: tagFlags.toString(2), tagUnsync, hasExtHeader, size});
+    let buf = await window.dkAPI.readFileRange(filePath, 10, size);
+    dbg("buf lido", buf.length, "de", size, "esperados");
+    if(tagUnsync) buf = removeUnsync(buf);
     let off=0;
+    if(hasExtHeader){
+      // v2.4: tamanho do cabeçalho estendido é synchsafe e já se inclui.
+      // v2.3: tamanho é inteiro normal de 32 bits e NÃO se inclui (soma-se
+      // os 4 bytes do próprio campo de tamanho).
+      off = majorVersion>=4
+        ? readSynchsafe(buf,0)
+        : 4 + ((buf[0]<<24)|(buf[1]<<16)|(buf[2]<<8)|buf[3]);
+    }
     while(off < buf.length-10){
       const id = String.fromCharCode(buf[off],buf[off+1],buf[off+2],buf[off+3]);
       if(id==="\0\0\0\0") break;
-      const frameSize = (buf[off+4]<<24)|(buf[off+5]<<16)|(buf[off+6]<<8)|buf[off+7];
-      if(frameSize<=0 || off+10+frameSize>buf.length) break;
-      const frameData = buf.slice(off+10, off+10+frameSize);
+      // ID3v2.4 usa tamanho "synchsafe" (7 bits úteis por byte) também pra
+      // cada campo individual, não só pro cabeçalho geral — v2.3 usa um
+      // inteiro normal de 32 bits. Ferramentas como o spotdl (via mutagen)
+      // costumam gravar em v2.4; sem diferenciar isso, o tamanho da CAPA
+      // (o campo mais pesado do arquivo) saía errado — títulos/artistas
+      // são pequenos o bastante pra os dois cálculos darem o mesmo valor
+      // por coincidência, por isso só a capa era afetada.
+      const frameSize = majorVersion>=4
+        ? readSynchsafe(buf, off+4)
+        : (buf[off+4]<<24)|(buf[off+5]<<16)|(buf[off+6]<<8)|buf[off+7];
+      if(frameSize<=0 || off+10+frameSize>buf.length){
+        dbg("parou no frame", JSON.stringify(id), {frameSize, off, bufLen:buf.length});
+        break;
+      }
+      dbg("frame", JSON.stringify(id), "size", frameSize, "off", off);
+      let frameData = buf.slice(off+10, off+10+frameSize);
+      if(majorVersion>=4){
+        // Segundo byte de flags do frame (formato %0h00kmnp):
+        // bit 0x01 = data length indicator presente (4 bytes synchsafe no
+        //            início dos dados, com o tamanho "real" pós-unsync);
+        // bit 0x02 = unsynchronisation aplicada só a este frame.
+        // O mutagen pode ligar essas flags no APIC mesmo sem ligar a flag
+        // global do cabeçalho, então sem checar isso aqui a capa continua
+        // vindo corrompida mesmo já tratando a unsync do cabeçalho.
+        const frameFlags2 = buf[off+9];
+        const hasDataLenInd = !!(frameFlags2 & 0x01);
+        const frameUnsync = !!(frameFlags2 & 0x02);
+        let p2 = 0;
+        if(hasDataLenInd) p2 = 4; // tamanho real, não precisamos do valor em si
+        if(frameUnsync) frameData = removeUnsync(frameData.slice(p2));
+        else if(p2) frameData = frameData.slice(p2);
+      }
       if(id==="TIT2") meta.title = decodeText(frameData.slice(1), frameData[0]);
       else if(id==="TPE1") meta.artist = decodeText(frameData.slice(1), frameData[0]);
       else if(id==="TALB") meta.album = decodeText(frameData.slice(1), frameData[0]);
@@ -120,11 +183,27 @@ async function parseID3(filePath){
           p += 1; // picture type byte
           let descEnd=p;
           if(enc===0||enc===3){ while(frameData[descEnd]!==0 && descEnd<frameData.length) descEnd++; descEnd+=1; }
-          else { while(!(frameData[descEnd]===0 && frameData[descEnd+1]===0) && descEnd<frameData.length) descEnd++; descEnd+=2; }
+          else {
+            // UTF-16: o terminador nulo ocupa 2 bytes e só é válido alinhado
+            // de 2 em 2 a partir do início da descrição — varrer byte a byte
+            // encontra um par "00 00" falso sempre que o último caractere é
+            // ASCII em UTF-16LE (byte alto 0x00 + primeiro byte do
+            // terminador real também 0x00), cortando a imagem 1 byte cedo.
+            while(descEnd+1<frameData.length && !(frameData[descEnd]===0 && frameData[descEnd+1]===0)) descEnd+=2;
+            descEnd+=2;
+          }
           const imgBytes = frameData.slice(descEnd);
+          dbg("APIC decodificado", {enc, mime, mimeEnd, descEnd, frameDataLen:frameData.length, imgBytesLen:imgBytes.length, first4:Array.from(imgBytes.slice(0,4))});
           const blob = new Blob([imgBytes], {type:mime});
           meta.coverUrl = URL.createObjectURL(blob);
-        }catch(e){ /* ignore cover parse errors */ }
+          // Guarda os bytes brutos também (não só o blob: URL) — quem
+          // precisar reenviar a imagem pra outro lugar (ex: "Ouvir Junto"
+          // mandando a capa pro amigo) pode usar isso direto, sem precisar
+          // de fetch() num blob: URL, que a CSP do app bloqueia.
+          meta.coverBytes = imgBytes;
+          meta.coverMime = mime;
+          dbg("coverUrl criado", meta.coverUrl);
+        }catch(e){ dbg("ERRO ao decodificar APIC", e && e.message, e && e.stack); }
       }
       off += 10+frameSize;
     }
@@ -146,6 +225,7 @@ function parseFromFilename(name){
 const S = {
   libraryPath:null,   // absolute path to the music folder, persisted via window.dkAPI
   tracks:[],          // {id,name,path,title,artist,album,coverUrl}
+  trackOriginalPaths:{}, // trackId -> caminho de origem, antes de entrar numa pasta de playlist
   view:"all",         // all | artists | albums | playlists | artist-detail | album-detail | playlist-detail
   detailKey:null,      // artist name / album name / playlist id currently open
   search:"",
@@ -201,6 +281,112 @@ async function loadPlaylists(){
   S.playlists = Array.isArray(pl) ? pl : [];
 }
 
+// Guarda de onde cada música veio ANTES de ser movida pra dentro de uma
+// pasta de playlist — é o que permite devolver ela pro lugar de origem
+// se a playlist for excluída depois.
+async function saveTrackOriginalPaths(){
+  await Store.set("trackOriginalPaths", S.trackOriginalPaths);
+}
+async function loadTrackOriginalPaths(){
+  const m = await Store.get("trackOriginalPaths");
+  S.trackOriginalPaths = (m && typeof m==="object") ? m : {};
+}
+
+/* ============================================================
+   PASTAS FÍSICAS DE PLAYLIST
+   Cada playlist ganha uma subpasta dentro da biblioteca. Quando uma
+   música entra numa playlist PELA PRIMEIRA VEZ (ou seja, ainda não
+   pertence a nenhuma outra playlist), o arquivo é movido pra essa
+   subpasta. Se depois ela for adicionada a uma segunda playlist, o
+   arquivo NÃO é movido de novo — só a referência (trackId) é adicionada,
+   o arquivo físico continua onde já estava.
+============================================================ */
+async function ensurePlaylistFolder(playlist){
+  if(playlist.folderPath) return playlist.folderPath;
+  if(!S.libraryPath) return null;
+  try{
+    const folder = await window.dkAPI.ensurePlaylistFolder(S.libraryPath, playlist.name);
+    playlist.folderPath = folder;
+    await savePlaylists();
+    return folder;
+  }catch(e){ console.warn("não foi possível criar a pasta da playlist", e); return null; }
+}
+
+async function addTrackToPlaylist(playlist, trackId){
+  if(playlist.trackIds.includes(trackId)){ showToast(`Já está em "${playlist.name}"`); return; }
+  const track = trackById(trackId);
+  const alreadyInAnotherPlaylist = S.playlists.some(p=>p.id!==playlist.id && p.trackIds.includes(trackId));
+
+  playlist.trackIds.push(trackId);
+  await savePlaylists();
+
+  if(track && !alreadyInAnotherPlaylist){
+    const folder = await ensurePlaylistFolder(playlist);
+    if(folder){
+      try{
+        // Guarda de onde ela veio ANTES de mover — é o que permite
+        // devolver ela pro lugar certo se a playlist for excluída depois.
+        S.trackOriginalPaths[track.id] = track.path;
+        await saveTrackOriginalPaths();
+
+        const newPath = await window.dkAPI.moveFileToFolder(track.path, folder);
+        if(newPath) track.path = newPath;
+      }catch(e){ console.warn("falha ao mover arquivo pra pasta da playlist", e); }
+    }
+  }
+
+  if(S.view==="playlist-detail") render();
+  showToast(`Adicionada à playlist "${playlist.name}"`);
+}
+
+/* Exclui uma playlist: pra cada música cujo arquivo físico mora na pasta
+   DESSA playlist (comparando a pasta atual do arquivo com a pasta da
+   playlist), devolve ela pro caminho de origem salvo. Músicas que estão
+   em OUTRAS playlists continuam encontráveis normalmente depois (elas só
+   guardam o id da faixa, não o caminho, e o escaneamento da biblioteca já
+   é recursivo). Só apaga a pasta física se ela ficar vazia no final —
+   por segurança, nunca apaga uma pasta com algo dentro. */
+async function deletePlaylistAndRestoreFiles(playlistId){
+  const playlist = S.playlists.find(p=>p.id===playlistId);
+  if(!playlist) return;
+
+  if(playlist.folderPath){
+    for(const trackId of playlist.trackIds){
+      const track = trackById(trackId);
+      if(!track) continue;
+
+      const inThisFolder = (()=>{
+        const trackDir = track.path.replace(/[\\/][^\\/]*$/, "");
+        return trackDir === playlist.folderPath;
+      })();
+      if(!inThisFolder) continue; // o arquivo físico não mora aqui, nada a fazer
+
+      const originalPath = S.trackOriginalPaths[trackId];
+      if(originalPath){
+        const originalFolder = originalPath.replace(/[\\/][^\\/]*$/, "");
+        try{
+          const restoredPath = await window.dkAPI.moveFileToFolder(track.path, originalFolder);
+          if(restoredPath) track.path = restoredPath;
+          delete S.trackOriginalPaths[trackId];
+        }catch(e){ console.warn("falha ao devolver arquivo pro lugar de origem", e); }
+      }
+      // se não tiver caminho de origem salvo (ex: playlist criada numa
+      // versão antiga do app), o arquivo fica onde está — mais seguro
+      // do que arriscar apagar algo sem saber pra onde mandar.
+    }
+    await saveTrackOriginalPaths();
+
+    try{
+      const deleted = await window.dkAPI.deleteFolderIfEmpty(playlist.folderPath);
+      if(!deleted) console.warn("pasta da playlist não estava vazia, não apaguei:", playlist.folderPath);
+    }catch(e){ console.warn("falha ao apagar a pasta da playlist", e); }
+  }
+
+  S.playlists = S.playlists.filter(p=>p.id!==playlistId);
+  await savePlaylists();
+  showToast(`Playlist "${playlist.name}" excluída`);
+}
+
 /* ============================================================
    ORDEM CUSTOM DAS MÚSICAS NA TELA DE CADA ARTISTA
    (mesma ideia da ordem de faixas em playlists, mas guardada por nome
@@ -230,7 +416,7 @@ function ensureArtistOrder(artist, tracksInCurrentOrder){
   return S.artistOrder[artist];
 }
 async function moveArtistTrack(artist, index, dir){
-  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>t.artist===artist));
+  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>primaryArtist(t.artist)===artist));
   const order = ensureArtistOrder(artist, tracks);
   const newIndex = index+dir;
   if(newIndex<0 || newIndex>=order.length) return;
@@ -239,7 +425,7 @@ async function moveArtistTrack(artist, index, dir){
   render();
 }
 async function reorderArtistTrack(artist, from, to){
-  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>t.artist===artist));
+  const tracks = orderedArtistTracks(artist, S.tracks.filter(t=>primaryArtist(t.artist)===artist));
   const order = ensureArtistOrder(artist, tracks);
   if(from===to || isNaN(from) || isNaN(to)) return;
   const [moved] = order.splice(from,1);
@@ -288,6 +474,8 @@ async function scanDirectoryImpl(){
       artist: id3.artist || fromName.artist || "Artista desconhecido",
       album: id3.album || "Álbum desconhecido",
       coverUrl: id3.coverUrl || null,
+      coverBytes: id3.coverBytes || null,
+      coverMime: id3.coverMime || null,
     });
   }
   S.tracks.sort((a,b)=>a.title.localeCompare(b.title,"pt-BR"));
@@ -364,6 +552,7 @@ document.getElementById("addMusicBtn").addEventListener("click", async ()=>{
 ============================================================ */
 async function init(){
   await loadPlaylists();
+  await loadTrackOriginalPaths();
   await loadArtistOrder();
   const st = await loadPlaybackState();
   updateShuffleRepeatUI();
@@ -453,10 +642,23 @@ function trackCardHtml(t){
   </div>`;
 }
 
-function groupBy(tracks, key){
+// Pega o "artista principal" de uma faixa a partir do campo de artista
+// completo — usado só pra AGRUPAR na tela de Artistas, nunca pra exibir.
+// Uma faixa creditada a "Michael Jackson/Akon" deve cair dentro do grupo
+// "Michael Jackson" já existente, em vez de virar um artista novo e solto
+// só por causa da colaboração.
+function primaryArtist(artistString){
+  if(!artistString) return "Artista desconhecido";
+  const parts = artistString.split(/\s*\/\s*|\s*,\s*|\s+&\s+|\s+[xX]\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s*;\s*/i);
+  const first = parts[0] && parts[0].trim();
+  return first || artistString.trim();
+}
+
+function groupBy(tracks, keyOrFn){
   const map = new Map();
+  const getKey = typeof keyOrFn==="function" ? keyOrFn : (t)=>t[keyOrFn];
   tracks.forEach(t=>{
-    const k = t[key];
+    const k = getKey(t);
     if(!map.has(k)) map.set(k, []);
     map.get(k).push(t);
   });
@@ -487,7 +689,7 @@ function render(){
     html += list.length ? `<div class="grid">${list.map(trackCardHtml).join("")}</div>` : emptyStateHtml(S.tracks.length?"search":"all");
   }
   else if(S.view==="artists"){
-    const groups = groupBy(filteredTracks(S.tracks), "artist");
+    const groups = groupBy(filteredTracks(S.tracks), t=>primaryArtist(t.artist));
     html += `<div class="content-header"><div class="content-title">Artistas</div></div>`;
     if(groups.size){
       html += `<div class="grid">`+ [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],"pt-BR")).map(([artist,tracks])=>`
@@ -511,7 +713,7 @@ function render(){
     } else html += emptyStateHtml("all");
   }
   else if(S.view==="artist-detail"){
-    const rawTracks = S.tracks.filter(t=>t.artist===S.detailKey);
+    const rawTracks = S.tracks.filter(t=>primaryArtist(t.artist)===S.detailKey);
     const tracks = filteredTracks(orderedArtistTracks(S.detailKey, rawTracks));
     html += `<button class="back-link" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>Artistas</button>`;
     html += `<div class="content-header"><div><div class="content-title">${escapeHtml(S.detailKey)}</div><div class="content-sub">${tracks.length} faixas</div></div></div>`;
@@ -670,11 +872,10 @@ function attachContentEvents(){
   if(renameBtn) renameBtn.addEventListener("click", ()=> openPlaylistModal(S.detailKey));
   const deleteBtn = content.querySelector("#deletePlaylistBtn");
   if(deleteBtn) deleteBtn.addEventListener("click", async ()=>{
-    const removed = S.playlists.find(p=>p.id===S.detailKey);
-    S.playlists = S.playlists.filter(p=>p.id!==S.detailKey);
-    await savePlaylists();
+    const playlistId = S.detailKey;
     S.view="playlists"; S.detailKey=null; render();
-    if(removed) showToast(`Playlist "${removed.name}" excluída`);
+    await deletePlaylistAndRestoreFiles(playlistId);
+    render();
   });
 }
 
@@ -682,7 +883,7 @@ function attachContentEvents(){
 function playTrackFromContext(trackId){
   let contextTracks;
   if(S.view==="all") contextTracks = filteredTracks(S.tracks);
-  else if(S.view==="artist-detail") contextTracks = orderedArtistTracks(S.detailKey, S.tracks.filter(t=>t.artist===S.detailKey));
+  else if(S.view==="artist-detail") contextTracks = orderedArtistTracks(S.detailKey, S.tracks.filter(t=>primaryArtist(t.artist)===S.detailKey));
   else if(S.view==="album-detail") contextTracks = S.tracks.filter(t=>t.album===S.detailKey);
   else if(S.view==="playlist-detail"){
     const p = S.playlists.find(pl=>pl.id===S.detailKey);
@@ -766,6 +967,20 @@ function playNext(auto){
     else { S.isPlaying=false; updatePlayButtons(); return; }
   }
   loadAndPlay(next);
+}
+
+// Usada pelo "Ouvir Junto" (sync.js) pra saber qual vai ser a próxima
+// música ANTES dela realmente tocar, e assim já ir mandando o arquivo
+// dela pro amigo em segundo plano. Só "espia" — não muda nada do estado
+// atual de reprodução.
+function peekNextTrackId(){
+  if(S.repeat==="one") return S.queue[S.queueIndex] || null;
+  let next = S.queueIndex+1;
+  if(next>=S.queue.length){
+    if(S.repeat==="all") next=0;
+    else return null;
+  }
+  return S.queue[next] || null;
 }
 function playPrev(){
   if(audio.currentTime>3){ audio.currentTime=0; return; }
@@ -1066,11 +1281,7 @@ function openTrackMenu(e, trackId){
       const p = S.playlists.find(pl=>pl.id===el.dataset.addToPlaylist);
       closeCtxMenu();
       if(!p) return;
-      if(p.trackIds.includes(trackId)){ showToast(`Já está em "${p.name}"`); return; }
-      p.trackIds.push(trackId);
-      await savePlaylists();
-      if(S.view==="playlist-detail") render();
-      showToast(`Adicionada à playlist "${p.name}"`);
+      await addTrackToPlaylist(p, trackId);
     });
   });
   setTimeout(()=> document.addEventListener("click", closeCtxMenuOnOutside), 0);
@@ -1126,8 +1337,15 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
     if(!name) return;
     if(existing){ existing.name = name; }
     else {
-      const newPlaylist = {id:uid(), name, image:null, trackIds: addTrackIdAfterCreate ? [addTrackIdAfterCreate] : []};
+      const newPlaylist = {id:uid(), name, image:null, folderPath:null, trackIds: []};
       S.playlists.push(newPlaylist);
+      await savePlaylists();
+      if(addTrackIdAfterCreate){
+        root.innerHTML="";
+        render();
+        await addTrackToPlaylist(newPlaylist, addTrackIdAfterCreate);
+        return;
+      }
     }
     await savePlaylists();
     root.innerHTML="";
@@ -1147,9 +1365,27 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
    notas do release do GitHub esteja vazio.
 ============================================================ */
 const CHANGELOG = [
-  { version:"1.0.2", date:"2026", notes:"• Corrige o modo aleatório, que continuava tocando músicas fora de ordem mesmo depois de desativado.\n• Ícone de repetição diferente pra 'repetir todas' e 'repetir música atual'.\n• Tela 'Sobre' agora é em tela cheia, com botão de voltar e Esc pra fechar." },
-  { version:"1.0.1", date:"2026", notes:"Corrige bug da barra de progresso e adiciona ícone do app." },
-  { version:"1.0.0", date:"2026", notes:"Lançamento inicial do DK Player." },
+  {
+    version: "1.1.0",
+    date: "2026",
+    title: "Sync Update",
+    notes: "• Novo modo 'Ouvir Junto', permitindo que duas pessoas escutem a mesma música sincronizada em tempo real.\n• Servidor dedicado 24 horas hospedado na Oracle Cloud para sincronização das sessões.\n• Suporte à leitura de metadados de arquivos MP3 (título, artista, álbum, duração e capa, quando disponíveis).\n• Interface modernizada com diversas melhorias visuais e de usabilidade.\n• Melhorias na estabilidade e no desempenho geral do aplicativo.\n• Correção de diversos bugs reportados pelos usuários.\n• Ajustes internos para tornar a reprodução mais confiável e responsiva."
+  },
+  {
+    version: "1.0.2",
+    date: "2026",
+    notes: "• Corrige o modo aleatório, que continuava tocando músicas fora de ordem mesmo depois de desativado.\n• Ícone de repetição diferente para 'Repetir Todas' e 'Repetir Música Atual'.\n• Tela 'Sobre' agora é exibida em tela cheia, com botão de voltar e suporte à tecla Esc para fechar."
+  },
+  {
+    version: "1.0.1",
+    date: "2026",
+    notes: "• Corrige um problema na barra de progresso da reprodução.\n• Adiciona o ícone oficial do DK Player."
+  },
+  {
+    version: "1.0.0",
+    date: "2026",
+    notes: "• Lançamento inicial do DK Player."
+  },
 ];
 
 // Tela cheia (não é mais um modal/pop-up): sólida, minimalista, com botão
