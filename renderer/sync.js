@@ -78,6 +78,10 @@ function ensurePeerAudioEl() {
   if (Party.peerAudio) return Party.peerAudio;
   const el = document.createElement("audio");
   el.id = "peerAudio";
+  // Nasce já com o volume que o usuário tinha configurado — sem isso ele
+  // sempre começava no volume máximo (100%) até a próxima vez que alguém
+  // mexesse na barra de volume.
+  el.volume = (typeof audio!=="undefined" && typeof audio.volume==="number") ? audio.volume : 1;
   document.body.appendChild(el);
   Party.peerAudio = el;
 
@@ -120,19 +124,32 @@ function showPartyTrackInMiniplayer(meta, opts = {}) {
   setTimeout(() => {
     const miniplayer = document.getElementById("miniplayer");
     miniplayer.style.display = "grid";
+    // Marca visualmente o player como "em sincronia" (brilho na capa etc.
+    // — ver .party-active no styles.css). Removido de novo em teardownConnection.
+    miniplayer.classList.add("party-active");
+    document.getElementById("fullOverlay").classList.add("party-active");
 
     const isLoading = !!opts.loading;
     const isMine = Party.activeSide === "me";
 
     if (isMine) {
       // A capa/título/artista real já foram colocados pelo próprio
-      // app.js (showMiniplayerForTrack) — só adiciono o aviso.
+      // app.js (showMiniplayerForTrack) — só adiciono o aviso, agora como
+      // um rótulo destacado (.party-label) em vez de texto plano.
       const artistEl = document.getElementById("mpArtist");
       const fpArtistEl = document.getElementById("fpArtist");
-      const suffix = isLoading ? ` · Sincronizando... ${opts.pct || 0}%` : " · Tocando pra vocês dois";
-      const base = meta.artist || "";
-      artistEl.textContent = base + suffix;
-      fpArtistEl.textContent = base + suffix;
+      const base = escapeHtml(meta.artist || "");
+      const labelText = isLoading ? `Sincronizando... ${opts.pct || 0}%` : `Tocando pra vocês dois`;
+      // Miniplayer: pouco espaço horizontal, então o rótulo vai numa
+      // segunda linha, embaixo do nome do artista, em vez de espremido
+      // do lado (evita truncar o texto).
+      const miniLabel = `<span class="party-label">${labelText}</span>`;
+      const miniHtml = base ? `<span class="party-mini-stack">${base}${miniLabel}</span>` : miniLabel;
+      // Tela cheia: espaço de sobra, mantém tudo na mesma linha — nome,
+      // bolinha e rótulo como itens irmãos, pra alinhar perfeitamente.
+      const fullHtml = `<span class="party-artist-line">${base ? `<span class="party-name">${base}</span>` : ""}<span class="party-dot"></span><span class="party-label-text">${labelText}</span></span>`;
+      artistEl.innerHTML = miniHtml;
+      fpArtistEl.innerHTML = fullHtml;
     } else {
       // Se a capa dessa faixa já chegou (transferida separadamente do
       // áudio — ver sendCoverForTrack), mostra ela; senão, o placeholder
@@ -144,11 +161,17 @@ function showPartyTrackInMiniplayer(meta, opts = {}) {
       document.getElementById("mpArt").classList.remove("spin");
 
       const title = isLoading ? `Sincronizando "${meta.title}"...` : meta.title;
-      const sub = isLoading ? `${opts.pct || 0}%` : `${meta.artist || ""} · Ouvindo com seu amigo`;
+      const base = escapeHtml(meta.artist || "");
+      const labelText = isLoading ? `${opts.pct || 0}%` : `Ouvindo com seu amigo`;
+      const miniLabel = `<span class="party-label">${labelText}</span>`;
+      const miniSub = (base && !isLoading) ? `<span class="party-mini-stack">${base}${miniLabel}</span>` : miniLabel;
+      const fullSub = isLoading
+        ? `<span class="party-artist-line"><span class="party-dot"></span><span class="party-label-text">${labelText}</span></span>`
+        : `<span class="party-artist-line">${base ? `<span class="party-name">${base}</span>` : ""}<span class="party-dot"></span><span class="party-label-text">${labelText}</span></span>`;
       document.getElementById("mpTitle").textContent = title;
-      document.getElementById("mpArtist").textContent = sub;
+      document.getElementById("mpArtist").innerHTML = miniSub;
       document.getElementById("fpTitle").textContent = title;
-      document.getElementById("fpArtist").textContent = sub;
+      document.getElementById("fpArtist").innerHTML = fullSub;
 
       if (isLoading) {
         mirrorProgressToUI(0, 0);
@@ -219,7 +242,14 @@ function setupSocketHandlers() {
 
     if (msg.type === "peer-left") {
       showToast("Seu amigo saiu da party.");
-      teardownConnection(false);
+      // Quem era o convidado (guest) não tem pra quem "reconectar" — o
+      // host que sumiu era o único dono da sessão. Sem isso, a tela ficava
+      // travada mostrando "Conectando com o host...", já que Party.code e
+      // Party.role continuavam preenchidos com os valores antigos.
+      // Quem é o host continua com o código ativo, esperando outra pessoa
+      // entrar (comportamento normal de sala aberta).
+      if (Party.role === "guest") leaveParty();
+      else teardownConnection(false);
     }
 
     if (msg.type === "error") {
@@ -314,6 +344,7 @@ function bindCtrlChannel(dc) {
     if (msg.type === "remote-pause-request" && Party.activeSide === "me") audio.pause();
     if (msg.type === "remote-resume-request" && Party.activeSide === "me") audio.play().catch(() => {});
     if (msg.type === "remote-seek-request" && Party.activeSide === "me") audio.currentTime = msg.time;
+    if (msg.type === "party-stop") handlePartyStopRequest();
   };
 }
 
@@ -610,6 +641,45 @@ window.togglePlay = function () {
   _originalTogglePlay();
 };
 
+/* ============================================================
+   FECHAR O PLAYER NO "OUVIR JUNTO"
+   O X do miniplayer/tela cheia (closePlayer, em app.js) só mexia no MEU
+   player local — se a faixa ativa fosse a do amigo (Party.activeSide ===
+   "peer"), o áudio dele continuava tocando normalmente do lado dele.
+   Agora, com a party conectada, o X manda um aviso pro outro lado
+   ("party-stop") e os dois encerram a reprodução compartilhada juntos,
+   não importa de qual lado ela estava tocando.
+============================================================ */
+function handlePartyStopRequest() {
+  // Se eu estava ouvindo a faixa do amigo, é o peerAudio que precisa parar
+  // (o <audio> principal não tem nada carregado nesse caso).
+  if (Party.peerAudio) {
+    Party.peerAudio.pause();
+    Party.peerAudio.removeAttribute("src");
+  }
+  Party.activeSide = "me";
+  Party.activeTrackMeta = null;
+  Party.isPlaying = false;
+  Party.loading = null;
+  document.getElementById("miniplayer")?.classList.remove("party-active");
+  document.getElementById("fullOverlay")?.classList.remove("party-active");
+  // closePlayer (app.js) cuida do <audio> principal (se era ele quem
+  // estava tocando/transmitindo pro amigo) e some com o miniplayer.
+  if (typeof closePlayer === "function") closePlayer();
+  updatePartyUI();
+}
+
+document.getElementById("closePlayerBtn")?.addEventListener("click", (e) => {
+  if (!Party.connected) return; // fora da party, deixa o comportamento normal do app.js
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  if (Party.ctrlChannel && Party.ctrlChannel.readyState === "open") {
+    Party.ctrlChannel.send(JSON.stringify({ type: "party-stop" }));
+  }
+  handlePartyStopRequest();
+  showToast("Reprodução encerrada para os dois");
+}, true); // fase de captura — roda antes do listener original do app.js
+
 ["playBtn", "fpPlayBtn"].forEach((id) => {
   const btn = document.getElementById(id);
   if (!btn) return;
@@ -687,6 +757,9 @@ function teardownConnection(fullReset) {
   if (Party.peerAudio) { Party.peerAudio.pause(); Party.peerAudio.removeAttribute("src"); }
   if (fullReset) { Party.code = null; Party.role = null; Party.ws = null; }
 
+  document.getElementById("miniplayer")?.classList.remove("party-active");
+  document.getElementById("fullOverlay")?.classList.remove("party-active");
+
   // Volta o player a refletir a MINHA música local (se tiver alguma),
   // já que o mostrado até agora podia ser o do amigo.
   const t = typeof currentTrack === "function" ? currentTrack() : null;
@@ -710,9 +783,9 @@ function openPartyModal() {
           <button class="btn btn-primary" id="partyCreateBtn">Criar party</button>
           <button class="btn btn-ghost" id="partyJoinToggleBtn">Entrar com código</button>
         </div>
-        <div id="partyJoinRow" style="display:none;gap:8px;margin-bottom:12px;">
-          <input type="text" id="partyCodeInput" placeholder="Código da party" maxlength="6" style="text-transform:uppercase;flex:1;" />
-          <button class="btn btn-primary" id="partyJoinBtn">Entrar</button>
+        <div id="partyJoinRow" class="party-join-row">
+          <input type="text" id="partyCodeInput" class="party-join-input" placeholder="Código da party" maxlength="6" />
+          <button class="btn btn-primary party-join-btn" id="partyJoinBtn">Entrar</button>
         </div>
         <div id="partyStatusArea" style="font-size:13.5px;line-height:1.6;"></div>
         <div class="modal-actions">
@@ -751,32 +824,52 @@ function openPartyModal() {
 function updatePartyButton() {
   const btn = document.getElementById("partyBtn");
   if (!btn) return;
+  btn.classList.toggle("connected", Party.connected);
   if (Party.connected) {
-    btn.innerHTML = `<span class="status-dot ok"></span> Conectado`;
-    btn.style.display = "inline-flex";
-    btn.style.alignItems = "center";
-    btn.style.gap = "6px";
+    btn.innerHTML = `<span class="party-pulse-dot"></span> Conectado`;
   } else {
-    btn.innerHTML = "Ouvir Junto";
-    btn.style.display = "";
+    btn.textContent = "Ouvir Junto";
   }
 }
 
 function updatePartyUI() {
   updatePartyButton();
 
+  // O Discord Rich Presence (app.js) depende do estado da party pra saber
+  // se mostra "Ouvindo Junto" e pra pegar a faixa certa quando ela é a do
+  // amigo — então toda mudança relevante de estado (conectar/desconectar,
+  // trocar de faixa, o amigo dar play/pause etc.) já passa por aqui, então
+  // é o lugar certo pra reenviar a atividade também.
+  if (typeof updateDiscordPresence === "function") updateDiscordPresence();
+
   const area = document.getElementById("partyStatusArea");
   if (area) {
     if (Party.connected) {
-      area.innerHTML = `<span style="color:#4ADE80;">● Conectado</span> — código <strong>${escapeHtml(Party.code || "")}</strong>
-        <br><button class="btn btn-ghost" id="partyLeaveBtn" style="margin-top:10px;">Sair da party</button>`;
+      area.innerHTML = `
+        <div class="party-connected-card">
+          <span class="party-pulse-dot"></span>
+          <div>
+            <div class="party-connected-title">Conectado</div>
+            <div class="party-code-tag">código ${escapeHtml(Party.code || "")}</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost" id="partyLeaveBtn" style="margin-top:12px;width:100%;">Sair da party</button>`;
       const leaveBtn = document.getElementById("partyLeaveBtn");
       if (leaveBtn) leaveBtn.addEventListener("click", () => { leaveParty(); document.getElementById("modalRoot").innerHTML = ""; });
     } else if (Party.code && Party.role === "host") {
-      area.innerHTML = `Código da party:<br><strong style="font-size:22px;letter-spacing:3px;">${escapeHtml(Party.code)}</strong>
-        <br><span style="color:var(--text-dim);font-size:12px;">Manda esse código pro seu amigo. Aguardando ele entrar...</span>`;
+      area.innerHTML = `
+        <div class="party-code-card">
+          <div class="party-code-label">Código da party</div>
+          <div class="party-code-value">${escapeHtml(Party.code)}</div>
+          <div class="party-code-hint">Manda esse código pro seu amigo. Aguardando ele entrar...</div>
+        </div>`;
     } else if (Party.code && Party.role === "guest") {
-      area.textContent = "Conectando com o host...";
+      area.innerHTML = `
+        <div class="party-code-card">
+          <div class="party-code-hint" style="margin-top:0;">Conectando com o host...</div>
+        </div>`;
+    } else {
+      area.innerHTML = "";
     }
   }
 }

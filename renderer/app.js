@@ -245,6 +245,10 @@ const S = {
 const audio = document.getElementById("audio");
 audio.volume = S.volume;
 
+// Guarda o último volume "não-mudo" pra poder restaurar exatamente onde
+// estava quando o usuário clicar de novo no ícone pra desmutar.
+let volumeBeforeMute = S.volume>0 ? S.volume : 0.9;
+
 function trackById(id){ return S.tracks.find(t=>t.id===id); }
 function currentTrack(){ return trackById(S.queue[S.queueIndex]); }
 
@@ -271,6 +275,7 @@ async function loadPlaybackState(){
   S.shuffle = !!st.shuffle;
   S.repeat = st.repeat || "off";
   audio.volume = S.volume;
+  if(S.volume>0) volumeBeforeMute = S.volume;
   return st;
 }
 async function savePlaylists(){
@@ -554,7 +559,7 @@ async function init(){
   await loadPlaylists();
   await loadTrackOriginalPaths();
   await loadArtistOrder();
-  const st = await loadPlaybackState();
+  await loadPlaybackState();
   updateShuffleRepeatUI();
   setVolumeUI(S.volume);
 
@@ -575,15 +580,14 @@ async function init(){
   updateStatusPill();
   render();
 
-  if(st && st.queueIds && st.queueIds.length){
-    S.queue = st.queueIds;
-    S.unshuffledQueue = (st.unshuffledQueueIds && st.unshuffledQueueIds.length) ? st.unshuffledQueueIds : st.queueIds.slice();
-    S.queueIndex = st.queueIndex ?? -1;
-    renderQueue();
-    // don't auto-play on load; just prep so the mini player can show last track info
-    const t = trackById(st.lastTrackId);
-    if(t){ showMiniplayerForTrack(t); }
-  }
+  // Propositalmente NÃO restauramos mais a música/fila da última sessão
+  // aqui — o usuário não quer que o app abra já com a última faixa
+  // carregada no miniplayer. Preferências (volume, shuffle, repeat) ainda
+  // são restauradas normalmente lá em cima; só a "música atual" não é mais.
+
+  // Manda a atividade pro Discord assim que o app termina de abrir — antes
+  // disso, se o usuário não tocasse nada, não aparecia nenhuma atividade.
+  updateDiscordPresence();
 }
 
 /* ============================================================
@@ -932,6 +936,85 @@ async function loadAndPlay(index){
   render();
   renderQueue();
   schedulePlaybackSave();
+  updateDiscordPresence();
+}
+
+/* ============================================================
+   DISCORD RICH PRESENCE
+   Só chamamos isso ao trocar de música, dar play/pause — NUNCA a cada
+   "timeupdate" do <audio>. O Discord limita a frequência de setActivity()
+   (chamadas demais em pouco tempo são ignoradas), e não precisa: mandando
+   startTimestamp/endTimestamp uma vez, o próprio Discord desenha e anima a
+   barra de progresso e o "X:XX" restante sozinho do lado dele.
+============================================================ */
+function updateDiscordPresence(){
+  if(!window.dkAPI?.setDiscordActivity) return; // preload antigo / API não exposta
+
+  const inParty = typeof Party!=="undefined" && Party.connected;
+  // Quando a faixa ativa da party é a do amigo (Party.activeSide==="peer"),
+  // currentTrack() fica vazio — a MINHA fila local não tem nada tocando —
+  // então antes disso fazia o Discord mostrar "Nenhuma música tocando"
+  // mesmo com uma música rolando de verdade (só que vinda do peerAudio).
+  const listeningToPeer = inParty && Party.activeSide==="peer" && Party.activeTrackMeta;
+
+  const t = listeningToPeer ? null : currentTrack();
+  const title = listeningToPeer ? Party.activeTrackMeta.title : t?.title;
+  const artist = listeningToPeer ? Party.activeTrackMeta.artist : t?.artist;
+  const playing = listeningToPeer ? !!Party.isPlaying : S.isPlaying;
+  const dur = listeningToPeer ? (Party.peerAudio?.duration||0) : (audio.duration||0);
+  const elapsed = listeningToPeer ? (Party.peerAudio?.currentTime||0) : (audio.currentTime||0);
+
+  if(!title){
+    // Antes, sem nenhuma música tocando, a gente limpava a atividade —
+    // por isso só aparecia algo no Discord depois de escolher uma faixa.
+    // Agora mandamos um estado "parado" assim que o app abre, pra
+    // aparecer de cara mesmo sem nada tocando ainda.
+    window.dkAPI.setDiscordActivity({
+      type: 2,
+      details: "DK Player",
+      state: "Nenhuma música tocando",
+      largeImageKey: "logo",
+      instance: false,
+    });
+    return;
+  }
+
+  const nowMs = Date.now();
+  const elapsedMs = elapsed*1000;
+
+  const activity = {
+    // type 2 = Listening. Isso é o que faz o Discord mostrar "Ouvindo" em
+    // vez de "Jogando" no topo do card, E o que libera a barra de progresso
+    // de verdade (com duração total) em vez do simples contador com ícone
+    // de controle que aparece por padrão nas atividades tipo "Playing".
+    type: 2,
+    details: title,
+    state: artist || "Artista desconhecido",
+    largeImageKey: "logo",
+    instance: false,
+  };
+
+  // Terceira linha do card: o topo já mostra "Ouvindo DK Player" sozinho,
+  // então repetir "DK Player" aqui embaixo era redundante. Em vez disso,
+  // mostra que você está no "Ouvir Junto" com alguém (a info que os
+  // amigos realmente querem ver), ou o álbum da música quando não está
+  // em nenhuma party.
+  if(inParty) activity.largeImageText = "Ouvindo Junto com um amigo";
+  else if(!listeningToPeer && t?.album) activity.largeImageText = t.album;
+
+  // Timestamps só fazem sentido enquanto está tocando; pausado, o Discord
+  // mostra "Pausado" sem barra de progresso rodando se a gente omitir eles.
+  if(playing){
+    activity.startTimestamp = Math.floor(nowMs - elapsedMs);
+    if(dur > 0) activity.endTimestamp = Math.floor(nowMs - elapsedMs + dur * 1000);
+    activity.smallImageKey = "play";
+    activity.smallImageText = "Tocando";
+  } else {
+    activity.smallImageKey = "pause";
+    activity.smallImageText = "Pausado";
+  }
+
+  window.dkAPI.setDiscordActivity(activity);
 }
 
 function showMiniplayerForTrack(t){
@@ -943,6 +1026,26 @@ function showMiniplayerForTrack(t){
   document.getElementById("fpArt").innerHTML = artHtml(t);
   document.getElementById("fpTitle").textContent = t.title;
   document.getElementById("fpArtist").textContent = t.artist;
+}
+
+// Para tudo e esconde o miniplayer por completo — diferente de pause, isso
+// zera a fila e a faixa atual, então não sobra nada tocando "escondido" nem
+// pra retomar sem querer depois.
+function closePlayer(){
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  S.queue = [];
+  S.unshuffledQueue = [];
+  S.queueIndex = -1;
+  S.isPlaying = false;
+  document.getElementById("miniplayer").style.display = "none";
+  document.getElementById("fullOverlay").classList.remove("show");
+  updatePlayButtons();
+  render();
+  renderQueue();
+  savePlaybackState();
+  updateDiscordPresence();
 }
 
 function togglePlay(){
@@ -1005,10 +1108,25 @@ audio.addEventListener("timeupdate", ()=>{
 audio.addEventListener("loadedmetadata", ()=>{
   document.getElementById("durTime").textContent = fmtTime(audio.duration);
   document.getElementById("fpDurTime").textContent = fmtTime(audio.duration);
+  // No momento do loadAndPlay(), o áudio às vezes ainda não tinha a duração
+  // carregada, então a atividade ia pro Discord sem endTimestamp (barra de
+  // progresso incompleta). Reenviar aqui garante a duração certa.
+  updateDiscordPresence();
 });
 audio.addEventListener("timeupdate", schedulePlaybackSave);
-audio.addEventListener("pause", ()=>{ S.isPlaying=false; updatePlayButtons(); });
-audio.addEventListener("play", ()=>{ S.isPlaying=true; updatePlayButtons(); });
+audio.addEventListener("pause", ()=>{ S.isPlaying=false; updatePlayButtons(); updateDiscordPresence(); });
+audio.addEventListener("play", ()=>{ S.isPlaying=true; updatePlayButtons(); updateDiscordPresence(); });
+
+// "seeked" dispara toda vez que o usuário pula pra outro ponto da música
+// (arrastando a barra, clicando nela, ou voltando pro início com "anterior").
+// O debounce evita mandar uma atualização pro Discord a cada pixel enquanto
+// o usuário ainda está arrastando — só manda a posição final, ~400ms depois
+// de parar de mexer.
+let seekDiscordDebounce = null;
+audio.addEventListener("seeked", ()=>{
+  clearTimeout(seekDiscordDebounce);
+  seekDiscordDebounce = setTimeout(updateDiscordPresence, 400);
+});
 
 function seekFromClientX(bar, clientX){
   const rect = bar.getBoundingClientRect();
@@ -1028,24 +1146,57 @@ function bindSeekBar(barId){
 }
 bindSeekBar("seekBar"); bindSeekBar("fpSeekBar");
 
+// Três estados de ícone, pra ele sempre condizer com o volume de verdade:
+// mudo (0%) = alto-falante com um "X"; baixo (até 50%) = uma onda só;
+// alto (acima de 50%) = duas ondas.
+function volumeIconPaths(v){
+  const speaker = `<path d="M11 5 6 9H2v6h4l5 4z"/>`;
+  if(v<=0) return speaker + `<line x1="16" y1="9" x2="21" y2="14"/><line x1="21" y1="9" x2="16" y2="14"/>`;
+  if(v<=0.5) return speaker + `<path d="M15.5 8.5a5 5 0 0 1 0 7"/>`;
+  return speaker + `<path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>`;
+}
 function setVolumeUI(v){
   document.getElementById("volFill").style.width=(v*100)+"%";
   document.getElementById("volHandle").style.left=(v*100)+"%";
   document.getElementById("fpVolFill").style.width=(v*100)+"%";
   document.getElementById("fpVolHandle").style.left=(v*100)+"%";
+  const iconHtml = volumeIconPaths(v);
+  const volIcon = document.getElementById("volIcon");
+  const fpVolIcon = document.getElementById("fpVolIcon");
+  if(volIcon) volIcon.innerHTML = iconHtml;
+  if(fpVolIcon) fpVolIcon.innerHTML = iconHtml;
+  const label = v<=0 ? "Ativar som" : "Silenciar";
+  if(volIcon) volIcon.setAttribute("title", label);
+  if(fpVolIcon) fpVolIcon.setAttribute("title", label);
+}
+function setVolume(v){
+  if(v>0) volumeBeforeMute = v; // só guarda valores "reais", nunca o 0 do mudo
+  S.volume = v; audio.volume = v;
+  // Quando estou ouvindo a música do amigo (Ouvir Junto), quem realmente
+  // toca o som é o elemento <audio> oculto do sync.js (Party.peerAudio),
+  // não o <audio> principal — por isso o volume não tinha efeito nenhum.
+  if(typeof Party!=="undefined" && Party.peerAudio) Party.peerAudio.volume = v;
+  setVolumeUI(v); schedulePlaybackSave();
+}
+function toggleMute(){
+  if(S.volume>0) setVolume(0);
+  else setVolume(volumeBeforeMute>0 ? volumeBeforeMute : 0.9);
 }
 function bindVolBar(barId){
   const bar = document.getElementById(barId);
   let dragging=false;
   function apply(clientX){
-    const pct = seekFromClientX(bar, clientX);
-    S.volume = pct; audio.volume = pct; setVolumeUI(pct); schedulePlaybackSave();
+    setVolume(seekFromClientX(bar, clientX));
   }
   bar.addEventListener("mousedown", e=>{ dragging=true; apply(e.clientX); });
   window.addEventListener("mousemove", e=>{ if(dragging) apply(e.clientX); });
   window.addEventListener("mouseup", ()=> dragging=false);
 }
 bindVolBar("volBar"); bindVolBar("fpVolBar");
+["volIcon","fpVolIcon"].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el) el.addEventListener("click", toggleMute);
+});
 
 // Dois ícones diferentes pro botão de repetir: o mesmo loop de setas nos
 // dois casos, mas "repetir a música atual" ganha um "1" no meio — assim dá
@@ -1111,10 +1262,15 @@ document.getElementById("shuffleBtn").addEventListener("click", toggleShuffle);
 document.getElementById("fpShuffleBtn").addEventListener("click", toggleShuffle);
 document.getElementById("repeatBtn").addEventListener("click", cycleRepeat);
 document.getElementById("fpRepeatBtn").addEventListener("click", cycleRepeat);
+document.getElementById("closePlayerBtn").addEventListener("click", closePlayer);
 
 /* Expand to full player */
 document.getElementById("mpTrackInfo").addEventListener("click", ()=>{
-  if(!currentTrack()) return;
+  // Quando a faixa ativa é a do amigo (Ouvir Junto), currentTrack() (a MINHA
+  // fila local) fica vazio — por isso o clique não fazia nada nesse caso.
+  // Aqui também aceitamos abrir a tela cheia se existe uma faixa ativa da party.
+  const hasPartyTrack = typeof Party!=="undefined" && Party.connected && Party.activeSide==="peer" && Party.activeTrackMeta;
+  if(!currentTrack() && !hasPartyTrack) return;
   document.getElementById("fullOverlay").classList.add("show");
 });
 document.getElementById("fpClose").addEventListener("click", ()=> document.getElementById("fullOverlay").classList.remove("show"));
@@ -1366,6 +1522,12 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
 ============================================================ */
 const CHANGELOG = [
   {
+    version: "1.1.1",
+    date: "2026",
+    title: "Ouvir Junto + Volume",
+    notes: "• Melhora geral na responsividade do aplicativo, com foco principal no mecanismo de busca.\n• Melhorias gerais no miniplayer.\n• Visual das funções do 'Ouvir Junto' aprimorado.\n• DK Player agora é reconhecido pelo Discord assim que é aberto.\n• O X do player agora encerra a música pros dois lados quando está no 'Ouvir Junto', em vez de fechar só pro seu lado.\n• Ícone de volume agora é clicável: muta a música na hora, e ao desmutar volta pro volume exato de antes.\n• Ícones de volume passam a mudar conforme o nível (mudo, baixo, alto), em vez de ficar sempre o mesmo.\n• Rich Presence do Discord não repete mais 'DK Player' na terceira linha do card — agora mostra o álbum da música (quando disponível).\n• Quando conectado no 'Ouvir Junto', o Discord mostra que você está ouvindo junto com um amigo.\n• Corrige o Discord mostrando 'Nenhuma música tocando' enquanto você ouvia a música compartilhada pelo seu amigo."
+  },
+  {
     version: "1.1.0",
     date: "2026",
     title: "Sync Update",
@@ -1402,7 +1564,12 @@ function openAboutScreen(){
         <span class="about-screen-changelog-version">v${escapeHtml(c.version)}</span><span class="about-screen-changelog-date">${escapeHtml(c.date)}</span>
         <div class="about-screen-changelog-notes">${escapeHtml(c.notes)}</div>
       </div>`).join("")}`;
-  document.getElementById("aboutScreen").classList.add("show");
+  const screen = document.getElementById("aboutScreen");
+  screen.classList.add("show");
+  // Sem isso, reabrir o "Sobre" mantinha a posição de scroll da última
+  // vez (o navegador não reresseta scrollTop de um elemento só porque
+  // ele volta a ficar visível) — sempre queremos começar do topo.
+  screen.scrollTop = 0;
 }
 function closeAboutScreen(){
   document.getElementById("aboutScreen").classList.remove("show");

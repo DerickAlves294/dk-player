@@ -2,6 +2,12 @@ const { app, BrowserWindow, ipcMain, dialog, protocol } = require("electron");
 const path = require("node:path");
 const fsp = require("node:fs/promises");
 const { autoUpdater } = require("electron-updater");
+const { Client: DiscordRPC } = require("@xhayper/discord-rpc");
+
+// ID do app criado no Discord Developer Portal (Rich Presence). A imagem
+// referenciada como "logo" precisa ter sido subida lá em
+// Rich Presence > Art Assets com esse mesmo nome.
+const DISCORD_CLIENT_ID = "1527183093667205222";
 
 // "Ouvir Junto" (WebRTC): por padrão o Chromium esconde o IP local por trás
 // de um endereço mDNS (privacidade), mas isso às vezes falha silenciosamente
@@ -50,6 +56,45 @@ async function writeConfig(cfg) {
 
 // Referência à janela principal, usada pra mandar eventos de update pro renderer
 let mainWindow = null;
+
+/* ============================================================
+   DISCORD RICH PRESENCE
+   Fica no processo principal porque a conexão com o Discord é feita via
+   IPC/socket local do próprio SO — o renderer não tem acesso a isso.
+   O renderer (app.js) só manda "aqui está a música tocando agora" via
+   dkAPI.setDiscordActivity(...), e a gente repassa pro Discord.
+
+   discordConnected controla se dá pra chamar setActivity() agora; se o
+   Discord não estiver aberto no momento em que o app inicia, a conexão
+   falha silenciosamente e a gente tenta de novo a cada 15s — assim, se o
+   usuário abrir o Discord depois, a presença aparece sem precisar reiniciar
+   o DK Player. lastActivity guarda o último estado pra reenviar assim que
+   (re)conectar.
+============================================================ */
+const discordClient = new DiscordRPC({ clientId: DISCORD_CLIENT_ID });
+let discordConnected = false;
+let lastActivity = null;
+
+discordClient.on("ready", () => {
+  discordConnected = true;
+  console.log("Discord RPC conectado");
+  if (lastActivity) {
+    discordClient.user?.setActivity(lastActivity).catch((e) => console.warn("discord setActivity falhou", e));
+  }
+});
+
+discordClient.on("disconnected", () => {
+  discordConnected = false;
+});
+
+function connectDiscordRPC() {
+  if (discordConnected) return;
+  discordClient.login().catch(() => {
+    // Normal se o Discord desktop não estiver aberto; tenta de novo depois.
+  });
+}
+connectDiscordRPC();
+setInterval(connectDiscordRPC, 15000);
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -328,6 +373,20 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle("discord-set-activity", (event, activity) => {
+    lastActivity = activity;
+    if (discordConnected) {
+      discordClient.user?.setActivity(activity).catch((e) => console.warn("discord setActivity falhou", e));
+    }
+  });
+
+  ipcMain.handle("discord-clear-activity", () => {
+    lastActivity = null;
+    if (discordConnected) {
+      discordClient.user?.clearActivity().catch(() => {});
+    }
+  });
+
   ipcMain.handle("get-app-version", () => app.getVersion());
 
   // O renderer chama isso quando o usuário clica em "Atualizar agora" na
@@ -359,4 +418,8 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  if (discordConnected) discordClient.destroy().catch(() => {});
 });

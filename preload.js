@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld("dkAPI", {
   basename: (p) => path.basename(p),
   mediaUrl: (filePath) => "dkmedia://local/" + encodeURIComponent(filePath),
 
+  // Discord Rich Presence: manda pro main.js o que deve aparecer no perfil
+  // do usuário no Discord (título, artista, capa, tempo). Falha em silêncio
+  // do lado do main.js se o Discord não estiver aberto.
+  setDiscordActivity: (activity) => ipcRenderer.invoke("discord-set-activity", activity),
+  clearDiscordActivity: () => ipcRenderer.invoke("discord-clear-activity"),
+
   // Auto update: versão atual do app + fluxo manual de atualização
   // (o renderer decide o que mostrar em cada etapa em vez de depender
   // da notificação silenciosa padrão do electron-updater)

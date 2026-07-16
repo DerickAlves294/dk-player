@@ -38,6 +38,10 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
         Nova playlist
       </button>
+      <div class="sidebar-library-status">
+        <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
+        <button class="sidebar-change-folder-btn" id="changeFolderBtn" style="display:none;">Trocar pasta</button>
+      </div>
     </div>
     <div class="sidebar-footer">
       <div class="sidebar-version" id="sidebarVersionTag">v1.0.1</div>
@@ -53,10 +57,8 @@
         <input id="searchInput" type="text" placeholder="Buscar por música, artista ou álbum" />
       </div>
       <div class="spacer"></div>
-      <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
-      <button class="btn btn-ghost" id="changeFolderBtn" style="display:none;font-size:12.5px;">Trocar pasta</button>
       <div id="partyStatusRoot"></div>
-      <button class="btn btn-ghost" id="partyBtn" style="font-size:12.5px;">Ouvir Junto</button>
+      <button class="btn btn-ghost party-btn" id="partyBtn" style="font-size:12.5px;">Ouvir Junto</button>
       <button class="add-btn" id="addMusicBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
         Adicionar músicas
@@ -76,7 +78,7 @@
     <div class="mp-center">
       <div class="mp-controls">
         <button class="ctrl-btn" id="shuffleBtn" title="Modo aleatório">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 5 5-5 5M4 4h7a4 4 0 0 1 4 4v1M4 20h7a4 4 0 0 0 4-4v-1M21 21l-5-5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
         </button>
         <button class="ctrl-btn" id="prevBtn" title="Anterior">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
@@ -102,9 +104,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h11M3 18h7"/><path d="m17 8 4 4-4 4"/></svg>
       </button>
       <div class="volume-wrap">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-dim);flex-shrink:0;" id="volIcon"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="vol-icon-btn" style="color:var(--text-dim);flex-shrink:0;" id="volIcon" title="Silenciar"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
         <div class="seek-bar" id="volBar"><div class="seek-fill" id="volFill"></div><div class="seek-handle" id="volHandle"></div></div>
       </div>
+      <button class="ctrl-btn" id="closePlayerBtn" title="Parar e fechar o player">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
     </div>
   </div>
 </div>
@@ -113,7 +118,7 @@
 <div class="overlay" id="fullOverlay">
   <button class="fp-close" id="fpClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   <div class="full-player">
-    <div class="fp-art" id="fpArt"></div>
+    <div class="fp-art-wrap" id="fpArtWrap"><div class="fp-art" id="fpArt"></div></div>
     <div class="fp-meta">
       <div class="fp-title" id="fpTitle">—</div>
       <div class="fp-artist" id="fpArtist">—</div>
@@ -124,7 +129,7 @@
       <span class="mp-time mono right" id="fpDurTime">0:00</span>
     </div>
     <div class="fp-controls">
-      <button class="ctrl-btn" id="fpShuffleBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 5 5-5 5M4 4h7a4 4 0 0 1 4 4v1M4 20h7a4 4 0 0 0 4-4v-1M21 21l-5-5"/></svg></button>
+      <button class="ctrl-btn" id="fpShuffleBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></button>
       <button class="ctrl-btn" id="fpPrevBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
       <button class="fp-play" id="fpPlayBtn"><svg id="fpPlayIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
       <button class="ctrl-btn" id="fpNextBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg></button>
@@ -133,7 +138,7 @@
     <div class="fp-bottom-row">
       <button class="ctrl-btn" id="fpQueueBtn" title="Fila"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h11M3 18h7"/><path d="m17 8 4 4-4 4"/></svg></button>
       <div class="volume-wrap">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-dim);flex-shrink:0;"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="vol-icon-btn" style="color:var(--text-dim);flex-shrink:0;" id="fpVolIcon" title="Silenciar"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
         <div class="seek-bar" id="fpVolBar"><div class="seek-fill" id="fpVolFill"></div><div class="seek-handle" id="fpVolHandle"></div></div>
       </div>
     </div>
@@ -164,6 +169,7 @@
     <div class="about-screen-name" id="aboutScreenName">DK Player</div>
     <div class="about-screen-sub">Desenvolvido por <strong>Dérick Alves</strong></div>
     <div class="about-screen-changelog" id="aboutScreenChangelog"></div>
+    <div class="about-screen-bottom-spacer"></div>
   </div>
 </div>
 

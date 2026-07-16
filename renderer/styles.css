@@ -87,6 +87,17 @@
   }
   .new-playlist-btn:hover{border-color:var(--accent);color:var(--accent);}
 
+  .sidebar-library-status{
+    margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
+    display:flex;flex-direction:column;gap:9px;flex-shrink:0;
+  }
+  .sidebar-change-folder-btn{
+    padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+    color:var(--text-dim);font-size:12px;font-weight:600;text-align:left;
+    transition:border-color .12s var(--ease),color .12s var(--ease);
+  }
+  .sidebar-change-folder-btn:hover{border-color:var(--accent);color:var(--accent);}
+
   .main{
     grid-row:1/2;
     display:flex;flex-direction:column;
@@ -94,15 +105,22 @@
     overflow:hidden;
   }
   .topbar{
+    position:relative;
     display:flex;align-items:center;gap:16px;
     padding:18px 30px;
     border-bottom:1px solid var(--border);
     flex-shrink:0;
   }
   .search-wrap{
-    position:relative;flex:1;max-width:420px;
+    position:relative;flex:1 1 260px;min-width:36px;max-width:420px;
+    transition:flex-basis .2s var(--ease), max-width .2s var(--ease), width .2s var(--ease);
   }
-  .search-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--text-faint);}
+  /* Prioridade pra busca: ao focar, ela expande de verdade em vez de só
+     ocupar o espaço que sobrar das outras coisas na topbar. */
+  .topbar:focus-within .search-wrap{
+    flex-basis:440px;max-width:min(560px, 46vw);
+  }
+  .search-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--text-faint);pointer-events:none;}
   .search-wrap input{
     width:100%;background:var(--surface-2);border:1px solid var(--border);
     border-radius:20px;padding:9px 14px 9px 34px;color:var(--text);font-size:13.5px;
@@ -116,14 +134,17 @@
     background:var(--accent);color:#1a1408;
     font-weight:700;font-size:13.5px;
     padding:9px 18px;border-radius:20px;
+    white-space:nowrap;flex-shrink:0;
     transition:transform .15s var(--ease), filter .15s var(--ease);
   }
   .add-btn:hover{filter:brightness(1.08);transform:translateY(-1px);}
   .add-btn svg{width:15px;height:15px;}
   .status-pill{
-    font-size:11.5px;color:var(--text-faint);display:flex;align-items:center;gap:6px;
+    font-size:12px;color:var(--text-faint);display:flex;align-items:center;gap:7px;
+    min-width:0;padding:0 10px;
   }
-  .status-dot{width:6px;height:6px;border-radius:50%;background:var(--text-faint);}
+  .status-pill span:not(.status-dot){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .status-dot{width:6px;height:6px;border-radius:50%;background:var(--text-faint);flex-shrink:0;}
   .status-dot.ok{background:#57C278;}
 
   .content{
@@ -306,6 +327,8 @@
   .seek-bar:hover .seek-handle{opacity:1;}
   .mp-right{display:flex;align-items:center;justify-content:flex-end;gap:16px;}
   .volume-wrap{display:flex;align-items:center;gap:8px;width:130px;}
+  .vol-icon-btn{cursor:pointer;transition:color .12s var(--ease), transform .12s var(--ease);}
+  .vol-icon-btn:hover{color:var(--text);transform:scale(1.08);}
   .volume-wrap .seek-bar{height:4px;}
 
   /* ---------- Full player overlay ---------- */
@@ -322,7 +345,8 @@
   .fp-close{position:absolute;top:26px;right:32px;color:var(--text-dim);}
   .fp-close:hover{color:var(--text);}
   .fp-close svg{width:22px;height:22px;}
-  .fp-art{width:100%;max-width:340px;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background:var(--surface-2);box-shadow:0 30px 60px rgba(0,0,0,0.5);}
+  .fp-art-wrap{position:relative;width:100%;max-width:340px;}
+  .fp-art{width:100%;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background:var(--surface-2);box-shadow:0 30px 60px rgba(0,0,0,0.5);}
   .fp-art img{width:100%;height:100%;object-fit:cover;}
   .fp-meta{text-align:center;}
   .fp-title{font-size:20px;font-weight:800;}
@@ -391,7 +415,7 @@
   }
   .modal input[type=text]:focus{border-color:var(--accent);}
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
-  .btn{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;}
+  .btn{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;flex-shrink:0;}
   .btn-ghost{color:var(--text-dim);}
   .btn-ghost:hover{color:var(--text);}
   .btn-primary{background:var(--accent);color:#1a1408;}
@@ -423,18 +447,39 @@
   /* ---------- "Sobre" em tela cheia ---------- */
   .about-screen{
     position:fixed;inset:0;background:var(--bg);z-index:400;
-    display:flex;align-items:center;justify-content:center;
+    display:flex;justify-content:center;
+    /* Antes tinha align-items:center e nenhum jeito de rolar: com o
+       changelog crescendo (mais versões, mais notas), o conteúdo ficava
+       mais alto que a tela e simplesmente vazava por cima e por baixo,
+       cortado, sem dar pra ver o resto. Agora a tela rola normalmente e
+       o conteúdo nasce encostado no topo (com respiro via padding) em
+       vez de forçado ao centro.
+       O padding-bottom NÃO fica aqui: containers com overflow-y:auto
+       ignoram o padding final quando o conteúdo estoura (bug conhecido
+       do flexbox/grid no Chromium) — por isso o respiro de baixo vive
+       no .about-screen-content mesmo, que é o que realmente rola. */
+    overflow-y:auto;
+    padding:76px 24px 0;
     opacity:0;pointer-events:none;transition:opacity .16s var(--ease);
   }
   .about-screen.show{opacity:1;pointer-events:auto;}
   .about-back-btn{
-    position:absolute;top:26px;left:28px;width:36px;height:36px;border-radius:8px;
+    /* position:fixed (não absolute) pra continuar ancorado no canto
+       enquanto o conteúdo abaixo dele rola. */
+    position:fixed;top:26px;left:28px;width:36px;height:36px;border-radius:8px;
     display:flex;align-items:center;justify-content:center;color:var(--text-dim);
+    background:var(--bg);
     transition:color .12s var(--ease), background .12s var(--ease);
   }
   .about-back-btn:hover{color:var(--text);background:var(--surface-2);}
   .about-back-btn svg{width:20px;height:20px;}
-  .about-screen-content{display:flex;flex-direction:column;align-items:center;text-align:center;width:min(360px,88vw);}
+  .about-screen-content{display:flex;flex-direction:column;align-items:center;text-align:center;width:min(360px,88vw);flex-shrink:0;}
+  /* Bloco de verdade em vez de padding: padding-bottom em containers com
+     overflow-y:auto pode ser ignorado pelo motor de renderização quando o
+     conteúdo estoura — um elemento com altura fixa sempre ocupa espaço no
+     fluxo do documento, então isso garante o respiro final não importa o
+     navegador/engine. */
+  .about-screen-bottom-spacer{width:100%;height:110px;flex-shrink:0;}
   .about-screen-icon{width:52px;height:52px;color:var(--accent);margin-bottom:16px;}
   .about-screen-icon svg{width:100%;height:100%;}
   .about-screen-name{font-size:19px;font-weight:800;}
@@ -464,6 +509,128 @@
   .fs-permission-card .btn-primary{padding:10px 22px;border-radius:22px;}
   .fs-permission-hint{margin-top:14px;font-size:11.5px;color:var(--text-faint);opacity:.75;}
 
+  /* ---------- Ouvir Junto (party) ---------- */
+  .party-btn{
+    display:inline-flex;align-items:center;gap:7px;
+    border-radius:20px;
+    transition:background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
+  }
+  .party-btn.connected{
+    background:linear-gradient(135deg, rgba(87,194,120,0.18), rgba(87,194,120,0.06));
+    border:1px solid rgba(87,194,120,0.4);
+    color:#8BE3A6;
+    padding-left:12px;padding-right:12px;
+  }
+  .party-pulse-dot{
+    width:7px;height:7px;border-radius:50%;background:#57C278;flex-shrink:0;
+    animation:party-pulse 1.8s var(--ease) infinite;
+  }
+  @keyframes party-pulse{
+    0%{box-shadow:0 0 0 0 rgba(87,194,120,0.55);}
+    70%{box-shadow:0 0 0 8px rgba(87,194,120,0);}
+    100%{box-shadow:0 0 0 0 rgba(87,194,120,0);}
+  }
+  /* Tela cheia (fp-artist): nome, bolinha e rótulo como 3 itens irmãos
+     no mesmo flex, todos com a mesma fonte/altura de linha — assim o
+     alinhamento vertical entre os dois textos é garantido pelo próprio
+     navegador (não depende de baseline de elemento aninhado, que é onde
+     o desalinhamento anterior vinha). */
+  .party-artist-line{
+    display:inline-flex;align-items:center;gap:8px;
+    line-height:1;vertical-align:middle;
+  }
+  .party-name{
+    line-height:1;white-space:nowrap;
+    position:relative;top:-1px;
+  }
+  .party-dot{
+    position:relative;z-index:2; /* sempre por cima do que estiver do lado */
+    width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;
+    animation:party-pulse-accent 1.6s var(--ease) infinite;
+  }
+  .party-label-text{
+    line-height:1;white-space:nowrap;
+    color:var(--accent);font-weight:700;letter-spacing:.2px;flex-shrink:0;
+  }
+  @keyframes party-pulse-accent{
+    0%{box-shadow:0 0 0 0 rgba(232,176,75,.55);}
+    70%{box-shadow:0 0 0 6px rgba(232,176,75,0);}
+    100%{box-shadow:0 0 0 0 rgba(232,176,75,0);}
+  }
+
+  /* Miniplayer: pouco espaço horizontal — nome do artista numa linha,
+     rótulo da party embaixo, SEM a bolinha pulsante (não cabe bem aqui
+     e nem é necessária, já que o rótulo já é bem destacado sozinho).
+     Precisa resetar o white-space herdado do .mp-artist/.fp-artist
+     (nowrap), senão as duas linhas colam numa só. */
+  .party-mini-stack{
+    display:flex;flex-direction:column;gap:2px;
+    white-space:normal;min-width:0;
+  }
+  .party-mini-stack > :first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .party-label{
+    color:var(--accent);font-weight:700;letter-spacing:.2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .miniplayer.party-active #mpArt{ outline:2px solid var(--accent); outline-offset:2px; }
+  /* Anel dourado sólido ao redor da capa na tela cheia, sempre visível
+     durante a party (substitui o outline estático de antes — precisou
+     virar um pseudo-elemento num wrapper sem overflow:hidden, senão o
+     anel ficava cortado pelo recorte de cantos arredondados da capa). */
+  #fullOverlay.party-active .fp-art-wrap::before{
+    content:"";
+    position:absolute;inset:-8px;
+    border-radius:22px;
+    border:3px solid var(--accent);
+    pointer-events:none;
+  }
+  /* Brilho que percorre o anel continuamente, por cima do anel sólido —
+     um arco claro girando 360°, formado com conic-gradient "vazado" no
+     miolo via mask (só sobra a casca do anel, não o disco inteiro). */
+  #fullOverlay.party-active .fp-art-wrap::after{
+    content:"";
+    position:absolute;inset:-8px;
+    border-radius:22px;padding:3px;
+    background:conic-gradient(from var(--party-shine-angle,0deg),
+      transparent 0deg, transparent 300deg, rgba(255,255,255,.95) 333deg, transparent 360deg);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;
+            mask-composite:exclude;
+    animation:party-ring-shine 2.6s linear infinite;
+    pointer-events:none;
+  }
+  @property --party-shine-angle{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  @keyframes party-ring-shine{ to{ --party-shine-angle:360deg; } }
+
+  .party-code-card{
+    text-align:center;padding:22px 16px;margin-top:4px;
+    background:var(--surface-2);border:1px dashed var(--border);border-radius:var(--radius);
+  }
+  .party-code-label{font-size:12px;color:var(--text-dim);margin-bottom:8px;}
+  .party-code-value{
+    font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;
+    letter-spacing:7px;color:var(--accent);
+  }
+  .party-code-hint{margin-top:10px;font-size:12px;color:var(--text-faint);}
+
+  .party-join-row{
+    display:none;align-items:stretch;gap:8px;margin-bottom:12px;
+  }
+  .party-join-input{
+    text-transform:uppercase;flex:1;min-width:0;
+    margin-bottom:0 !important; /* sobrescreve o margin-bottom:16px de ".modal input[type=text]",
+                                    que aqui dentro do row inflava a altura e esticava o botão junto */
+  }
+  .party-join-btn{flex-shrink:0;}
+
+  .party-connected-card{
+    display:flex;align-items:center;gap:12px;padding:14px 16px;
+    background:rgba(87,194,120,0.08);border:1px solid rgba(87,194,120,0.3);border-radius:var(--radius);
+  }
+  .party-connected-title{font-weight:700;color:#8BE3A6;font-size:13.5px;}
+  .party-code-tag{font-family:'JetBrains Mono',monospace;color:var(--text-dim);font-size:12px;margin-top:2px;}
+
   .toast{
     background:var(--surface-3);border:1px solid var(--border);color:var(--text);
     padding:10px 16px;border-radius:20px;font-size:13px;font-weight:600;
@@ -473,11 +640,44 @@
   @keyframes toast-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
   @keyframes toast-out{from{opacity:1;}to{opacity:0;transform:translateY(-6px);}}
 
+  @media (max-width:1080px){
+    .topbar{padding:16px 20px;gap:10px;}
+    .search-wrap{flex-basis:180px;}
+  }
+
   @media (max-width:860px){
     #app{grid-template-columns:0 1fr;}
     .sidebar{display:none;}
+    .topbar{padding:14px 16px;}
+    .search-wrap{flex-basis:150px;}
     .mp-track{max-width:150px;}
     .miniplayer{grid-template-columns:150px 1fr auto;}
     .mp-right .volume-wrap{display:none;}
     .queue-panel{width:100%;}
+  }
+
+  /* Telas bem estreitas: a busca vira só a lupa (ícone), sem espaço fixo
+     reservado pra ela na topbar — ao focar/tocar, ela se expande por cima
+     do resto da topbar (position:absolute) pra caber o texto digitado
+     sem espremer os outros botões. */
+  @media (max-width:640px){
+    .content{padding:20px 16px 140px;}
+    .search-wrap{
+      flex:0 0 38px;width:38px;max-width:38px;
+    }
+    .search-wrap input{
+      padding-left:34px;padding-right:8px;
+      color:transparent;caret-color:var(--text);
+    }
+    .search-wrap input::placeholder{color:transparent;}
+    .search-wrap:focus-within{
+      position:absolute;left:16px;right:16px;top:50%;
+      transform:translateY(-50%);
+      width:auto;flex:none;max-width:none;z-index:6;
+    }
+    .search-wrap:focus-within input{
+      color:var(--text);background:var(--surface-3);
+      box-shadow:0 10px 28px rgba(0,0,0,0.45);
+    }
+    .search-wrap:focus-within input::placeholder{color:var(--text-faint);}
   }
