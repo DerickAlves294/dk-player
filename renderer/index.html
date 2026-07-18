@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' dkmedia:; img-src 'self' dkmedia: blob: data:; media-src 'self' dkmedia: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' ws: wss:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' dkmedia:; img-src 'self' dkmedia: blob: data:; media-src 'self' dkmedia: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://www.gstatic.com; connect-src 'self' ws: wss: https://*.googleapis.com https://*.firebaseio.com;">
 <title>DK Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -51,6 +51,10 @@
         <div class="sidebar-version" id="sidebarVersionTag">v1.0.1</div>
         <div class="sidebar-dev">Desenvolvido por <strong>Dérick Alves</strong></div>
       </div>
+      <button class="sidebar-about-btn" id="friendsBtn" title="Amigos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Amigos</span>
+      </button>
       <button class="sidebar-about-btn" id="settingsBtn" title="Configurações">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         <span>Configurações</span>
@@ -221,6 +225,41 @@
   </div>
 </div>
 
+<!-- Amigos (tela cheia) -->
+<div class="about-screen" id="friendsScreen">
+  <button class="about-back-btn" id="friendsBackBtn" title="Voltar (Esc)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+  <div class="about-screen-content" style="width:min(420px,92vw);">
+    <div class="about-screen-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </div>
+    <div class="about-screen-name">Amigos</div>
+    <div class="friends-profile-card" id="friendsProfileCard"></div>
+
+    <div class="settings-block">
+      <div class="settings-block-title">Adicionar amigo</div>
+      <div class="friend-search-row">
+        <input type="text" id="friendSearchInput" placeholder="nome#0000" maxlength="40"/>
+        <button class="btn btn-primary" id="friendSearchBtn" type="button">Adicionar</button>
+      </div>
+      <div id="friendSearchStatus" class="friend-search-status"></div>
+    </div>
+
+    <div class="settings-block" id="friendRequestsBlock" style="display:none;">
+      <div class="settings-block-title">Pedidos pendentes</div>
+      <div id="friendRequestsList" class="friends-list"></div>
+    </div>
+
+    <div class="settings-block">
+      <div class="settings-block-title">Seus amigos</div>
+      <div id="friendsList" class="friends-list"></div>
+    </div>
+
+    <div class="about-screen-bottom-spacer"></div>
+  </div>
+</div>
+
 <!-- Sobre (tela cheia) -->
 <div class="about-screen" id="aboutScreen">
   <button class="about-back-btn" id="aboutBackBtn" title="Voltar (Esc)">
@@ -240,10 +279,15 @@
 <div id="modalRoot"></div>
 <div id="ctxRoot"></div>
 <div id="toastRoot" style="position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+<div id="partyInviteBanner" class="party-invite-banner" style="display:none;"></div>
 
 <audio id="audio" preload="metadata" crossorigin="anonymous"></audio>
 
 <script src="app.js"></script>
 <script src="sync.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="friends.js"></script>
 </body>
 </html>

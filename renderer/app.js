@@ -1648,6 +1648,11 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
 ============================================================ */
 const CHANGELOG = [
   {
+  version: "1.1.2",
+  date: "2026",
+  notes: "• Corrige diversos bugs e melhora a estabilidade geral do aplicativo.\n• Refina o alinhamento visual da interface com ajustes milimétricos.\n• A sidebar agora é totalmente responsiva para telas menores e pode ser recolhida ou expandida.\n• O botão de trocar pasta foi movido para o novo menu de Configurações, deixando a interface mais organizada.\n• Adiciona um sistema completo de personalização da aparência, com suporte a tema claro e escuro e cores personalizadas para destaque, fundo, superfície e texto.\n• Melhora a integração com o Discord Rich Presence, adicionando o rótulo 'Álbum:' para evitar repetição de informações.\n• Corrige a exibição das notas de versão no atualizador, eliminando a renderização de tags HTML como texto.\n• Adiciona uma barra de progresso durante o download das atualizações."
+ },
+  {
     version: "1.1.1",
     date: "2026",
     title: "Ouvir Junto + Volume",
