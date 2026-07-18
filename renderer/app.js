@@ -1647,11 +1647,6 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
    notas do release do GitHub esteja vazio.
 ============================================================ */
 const CHANGELOG = [
-{
-  version: "1.1.2",
-  date: "2026",
-  notes: "• Corrige diversos bugs e melhora a estabilidade geral do aplicativo.\n• Ajusta o alinhamento visual com refinamentos milimétricos em toda a interface.\n• A sidebar agora é responsiva para telas menores e pode ser recolhida ou expandida ao clicar no ícone.\n• O botão de >Trocar pasta< foi movido para o novo menu de Configurações.\n• Adiciona o sistema de personalização livre da interface."
-},
   {
     version: "1.1.1",
     date: "2026",
@@ -1720,6 +1715,27 @@ function closeSettingsScreen(){
 document.getElementById("settingsBtn").addEventListener("click", openSettingsScreen);
 document.getElementById("settingsBackBtn").addEventListener("click", closeSettingsScreen);
 
+// As notas de versão às vezes chegam do GitHub já em HTML (ex: <p>...</p>
+// gerado pelo pipeline de release) e às vezes em texto puro (o fallback do
+// CHANGELOG local). Isso normaliza os dois casos pra texto simples, e quem
+// desenha na tela sempre escapa o resultado — então nunca sobra tag crua
+// visível nem abre brecha de HTML injetado vindo de fora.
+function htmlNotesToPlainText(input){
+  return String(input||"")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /* ============================================================
    ATUALIZAÇÕES (auto-updater)
    O main.js manda "update-available" quando encontra uma versão nova no
@@ -1729,12 +1745,17 @@ document.getElementById("settingsBackBtn").addEventListener("click", closeSettin
 function openUpdateAvailableModal(version, notes){
   const root = document.getElementById("modalRoot");
   const fallback = CHANGELOG.find(c=>c.version===version);
-  const text = (notes && notes.trim()) || fallback?.notes || "Melhorias e correções de bugs.";
+  const rawText = (notes && notes.trim()) || fallback?.notes || "Melhorias e correções de bugs.";
+  const text = htmlNotesToPlainText(rawText);
   root.innerHTML = `
     <div class="modal-backdrop" id="modalBackdrop">
       <div class="modal modal-lg">
         <h3>Nova versão disponível — v${escapeHtml(version)}</h3>
         <div class="changelog-notes" style="margin-bottom:20px;">${escapeHtml(text)}</div>
+        <div class="update-progress-wrap" id="updateProgressWrap" style="display:none;">
+          <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
+          <span class="update-progress-pct" id="updateProgressPct">0%</span>
+        </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" id="updateLaterBtn">Depois</button>
           <button class="btn btn-primary" id="updateNowBtn">Atualizar agora</button>
@@ -1744,10 +1765,26 @@ function openUpdateAvailableModal(version, notes){
   document.getElementById("updateLaterBtn").addEventListener("click", ()=> root.innerHTML="");
   document.getElementById("updateNowBtn").addEventListener("click", ()=>{
     const btn = document.getElementById("updateNowBtn");
+    const laterBtn = document.getElementById("updateLaterBtn");
     btn.textContent = "Baixando...";
     btn.disabled = true;
+    laterBtn.disabled = true; // evita abandonar o modal no meio do download
+    document.getElementById("updateProgressWrap").style.display = "flex";
     window.dkAPI.startUpdateDownload();
   });
+}
+// O main.js precisa emitir isso a cada evento "download-progress" do
+// electron-updater (ver window.dkAPI.onUpdateProgress no preload). Se esse
+// canal ainda não existir, a barra simplesmente fica parada em 0% — o
+// download continua funcionando, só sem feedback visual até o main.js
+// mandar o progresso.
+function updateDownloadProgress(percent){
+  const fill = document.getElementById("updateProgressFill");
+  const pct = document.getElementById("updateProgressPct");
+  if(!fill || !pct) return;
+  const clamped = Math.max(0, Math.min(100, Math.round(percent || 0)));
+  fill.style.width = `${clamped}%`;
+  pct.textContent = `${clamped}%`;
 }
 function openUpdateReadyModal(){
   const root = document.getElementById("modalRoot");
@@ -1766,6 +1803,7 @@ function openUpdateReadyModal(){
   document.getElementById("restartNowBtn").addEventListener("click", ()=> window.dkAPI.installUpdateNow());
 }
 window.dkAPI.onUpdateAvailable(({version, notes})=> openUpdateAvailableModal(version, notes));
+window.dkAPI.onUpdateProgress?.(({percent})=> updateDownloadProgress(percent));
 window.dkAPI.onUpdateDownloaded(()=> openUpdateReadyModal());
 
 /* ============================================================

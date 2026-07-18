@@ -200,6 +200,48 @@
   .color-picker-item input[type=color]::-webkit-color-swatch-wrapper{padding:0;border-radius:50%;}
   .color-picker-item input[type=color]::-webkit-color-swatch{border:2px solid var(--border);border-radius:50%;}
 
+  /* ---------- Amigos ---------- */
+  .friends-profile-card{
+    margin-top:14px;padding:10px 16px;border-radius:20px;
+    background:var(--surface-2);border:1px solid var(--border);
+    font-size:13px;color:var(--text-dim);
+  }
+  .friend-tag{color:var(--text-faint);font-family:'JetBrains Mono',monospace;font-size:.92em;margin-left:1px;}
+  .friend-search-row{display:flex;gap:8px;width:100%;}
+  .friend-search-row input{
+    flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:10px 12px;color:var(--text);font-size:13.5px;outline:none;
+    transition:border-color .15s var(--ease);
+  }
+  .friend-search-row input:focus{border-color:var(--accent);}
+  .friend-search-status{font-size:12px;color:var(--text-faint);min-height:14px;text-align:left;width:100%;}
+  .friends-list{display:flex;flex-direction:column;gap:8px;width:100%;}
+  .friend-item{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+    background:var(--surface-2);border:1px solid var(--border);text-align:left;
+  }
+  .friend-avatar{
+    width:36px;height:36px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12.5px;
+  }
+  .friend-meta{flex:1;min-width:0;}
+  .friend-name{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .friend-sub{font-size:11.5px;color:var(--text-faint);display:flex;align-items:center;gap:6px;margin-top:2px;}
+  .friend-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .friend-actions .btn{padding:7px 12px;font-size:12px;}
+
+  /* ---------- Banner de convite pro Ouvir Junto ---------- */
+  .party-invite-banner{
+    position:fixed;bottom:170px;left:50%;transform:translateX(-50%);z-index:301;
+    display:flex;align-items:center;gap:12px;
+    background:var(--surface-2);border:1px solid var(--accent);border-radius:16px;
+    padding:12px 14px 12px 18px;box-shadow:0 14px 32px rgba(0,0,0,0.4);
+    font-size:13px;color:var(--text);max-width:min(420px,90vw);
+    animation:toast-in .18s var(--ease);
+  }
+  .party-invite-banner .btn{padding:7px 14px;font-size:12.5px;flex-shrink:0;}
+
   .main{
     flex:1;
     display:flex;flex-direction:column;
@@ -549,6 +591,18 @@
   }
   .modal input[type=text]:focus{border-color:var(--accent);}
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+  .update-progress-wrap{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+  .update-progress-bar{
+    flex:1;height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden;
+  }
+  .update-progress-fill{
+    height:100%;width:0%;border-radius:3px;background:var(--accent);
+    transition:width .2s var(--ease);
+  }
+  .update-progress-pct{
+    font-size:11.5px;font-weight:700;color:var(--text-dim);font-family:'JetBrains Mono',monospace;
+    min-width:34px;text-align:right;flex-shrink:0;
+  }
   .btn{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;flex-shrink:0;}
   .btn-ghost{color:var(--text-dim);}
   .btn-ghost:hover{color:var(--text);}
