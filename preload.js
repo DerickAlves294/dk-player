@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld("dkAPI", {
   // (o renderer decide o que mostrar em cada etapa em vez de depender
   // da notificação silenciosa padrão do electron-updater)
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (e, data) => callback(data)),
   onUpdateDownloaded: (callback) => ipcRenderer.on("update-downloaded", () => callback()),
   startUpdateDownload: () => ipcRenderer.invoke("start-update-download"),

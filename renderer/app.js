@@ -656,6 +656,8 @@ async function init(){
     S.appVersion = v;
     const tag = document.getElementById("sidebarVersionTag");
     if(tag) tag.textContent = "v"+v;
+    const updateStatusText = document.getElementById("updateCheckStatusText");
+    if(updateStatusText) updateStatusText.textContent = `Versão atual: v${v}`;
   }).catch(()=>{});
 
   // Electron apps get direct filesystem access — no permission dance,
@@ -1752,10 +1754,15 @@ function openUpdateAvailableModal(version, notes){
   const fallback = CHANGELOG.find(c=>c.version===version);
   const rawText = (notes && notes.trim()) || fallback?.notes || "Melhorias e correções de bugs.";
   const text = htmlNotesToPlainText(rawText);
+  // O campo "title" de cada entrada do CHANGELOG (ex: "Sync Update") é
+  // opcional — se existir pra essa versão, aparece como subtítulo aqui.
+  const subtitle = fallback?.title
+    ? `<span class="update-modal-subtitle">${escapeHtml(fallback.title)}</span>`
+    : "";
   root.innerHTML = `
     <div class="modal-backdrop" id="modalBackdrop">
       <div class="modal modal-lg">
-        <h3>Nova versão disponível — v${escapeHtml(version)}</h3>
+        <h3>Nova versão disponível — v${escapeHtml(version)}${subtitle}</h3>
         <div class="changelog-notes" style="margin-bottom:20px;">${escapeHtml(text)}</div>
         <div class="update-progress-wrap" id="updateProgressWrap" style="display:none;">
           <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
@@ -1810,6 +1817,55 @@ function openUpdateReadyModal(){
 window.dkAPI.onUpdateAvailable(({version, notes})=> openUpdateAvailableModal(version, notes));
 window.dkAPI.onUpdateProgress?.(({percent})=> updateDownloadProgress(percent));
 window.dkAPI.onUpdateDownloaded(()=> openUpdateReadyModal());
+
+/* ============================================================
+   VERIFICAÇÃO MANUAL DE ATUALIZAÇÕES (botão em Configurações)
+   Resolve o bug de quem baixa a atualização, clica "Depois" e só reabre o
+   app dias depois: sem esse botão a pessoa só ficava sabendo de uma nova
+   versão quando o app checava sozinho na abertura. Agora dá pra checar
+   manualmente a qualquer hora (usa window.dkAPI.checkForUpdates(), exposto
+   pelo preload.js e implementado no main.js via autoUpdater.checkForUpdates()).
+============================================================ */
+function setUpdateCheckStatus(text, variant){
+  const dot = document.getElementById("updateCheckDot");
+  const label = document.getElementById("updateCheckStatusText");
+  if(label) label.textContent = text;
+  if(dot){
+    dot.classList.remove("ok","warn","err","spin");
+    if(variant) dot.classList.add(variant);
+  }
+}
+async function checkForUpdatesManually(){
+  const btn = document.getElementById("checkUpdateBtn");
+  if(!btn) return;
+  if(typeof window.dkAPI.checkForUpdates !== "function"){
+    setUpdateCheckStatus("Verificação manual ainda não configurada no app (falta o método no main.js)", "err");
+    return;
+  }
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = "Verificando...";
+  setUpdateCheckStatus("Verificando atualizações...", "spin");
+  try{
+    const result = await window.dkAPI.checkForUpdates();
+    const current = S.appVersion || CHANGELOG[0]?.version || "";
+    if(result?.updateAvailable){
+      // Não chama openUpdateAvailableModal aqui: o main.js também emite o
+      // evento global "update-available" nessa mesma checagem, e o listener
+      // lá embaixo (window.dkAPI.onUpdateAvailable) já abre o modal sozinho.
+      setUpdateCheckStatus(`Nova versão disponível: v${result.version}`, "warn");
+    }else{
+      setUpdateCheckStatus(`Você já está na versão mais recente (v${current})`, "ok");
+    }
+  }catch(e){
+    console.warn("Falha ao verificar atualizações manualmente", e);
+    setUpdateCheckStatus("Não foi possível verificar agora. Tente de novo mais tarde.", "err");
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+document.getElementById("checkUpdateBtn")?.addEventListener("click", checkForUpdatesManually);
 
 /* ============================================================
    SEARCH

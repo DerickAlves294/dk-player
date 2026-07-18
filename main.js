@@ -126,14 +126,42 @@ function createWindow() {
    assim a gente decide exatamente o que mostrar em cada etapa (tela de "nova
    versão disponível" com as novidades, e tela de "atualização concluída"),
    em vez de depender da notificação nativa silenciosa do Windows.
+
+   autoInstallOnAppQuit = false: esse é o pulo do gato do bug relatado.
+   Por padrão o electron-updater deixa isso "true", ou seja: se a pessoa
+   baixa a atualização, clica "Depois" na telinha de reiniciar, e simplesmente
+   fecha o app normalmente (em vez de clicar "Reiniciar agora"), ele instala
+   a atualização baixada SOZINHO e SILENCIOSAMENTE nesse fechamento — sem
+   avisar nada. Na próxima vez que a pessoa abre o app, ela já está na
+   versão nova (por isso a opção de atualizar "não volta": não tem mais
+   nada pra atualizar, só que ninguém disse que a instalação aconteceu).
+   Com isso desligado, só instala quando o próprio usuário clicar em
+   "Reiniciar agora" — a atualização baixada fica só esperando, e o app
+   comparar a versão de novo no próximo "check-for-updates" continua
+   normal até a pessoa decidir instalar.
 ============================================================ */
 autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+// Guarda o resultado da última checagem, pra quem perguntar depois (ex: o
+// botão manual em Configurações) já ter uma resposta mesmo sem precisar
+// esperar um novo round-trip até o GitHub.
+let lastUpdateCheck = null; // { updateAvailable, version, notes } | null
 
 autoUpdater.on("update-available", (info) => {
-  mainWindow?.webContents.send("update-available", {
+  lastUpdateCheck = {
+    updateAvailable: true,
     version: info.version,
     notes: typeof info.releaseNotes === "string" ? info.releaseNotes : "",
+  };
+  mainWindow?.webContents.send("update-available", {
+    version: info.version,
+    notes: lastUpdateCheck.notes,
   });
+});
+
+autoUpdater.on("update-not-available", () => {
+  lastUpdateCheck = { updateAvailable: false };
 });
 
 autoUpdater.on("update-downloaded", () => {
@@ -388,6 +416,39 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("get-app-version", () => app.getVersion());
+
+  // Botão "Verificar atualizações" em Configurações. Reaproveita o mesmo
+  // autoUpdater (então "update-available"/"update-downloaded" acima
+  // continuam disparando normalmente pro resto do app), só que aqui a
+  // gente espera o resultado dessa checagem específica pra responder
+  // pro botão: já está atualizado, ou tem versão nova (e qual).
+  ipcMain.handle("check-for-updates", () => {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(result);
+      };
+      const onAvailable = (info) => finish({
+        updateAvailable: true,
+        version: info.version,
+        notes: typeof info.releaseNotes === "string" ? info.releaseNotes : "",
+      });
+      const onNotAvailable = () => finish({ updateAvailable: false });
+      const onError = (err) => finish({ updateAvailable: false, error: String(err?.message || err) });
+      function cleanup() {
+        autoUpdater.removeListener("update-available", onAvailable);
+        autoUpdater.removeListener("update-not-available", onNotAvailable);
+        autoUpdater.removeListener("error", onError);
+      }
+      autoUpdater.once("update-available", onAvailable);
+      autoUpdater.once("update-not-available", onNotAvailable);
+      autoUpdater.once("error", onError);
+      autoUpdater.checkForUpdates().catch(onError);
+    });
+  });
 
   // O renderer chama isso quando o usuário clica em "Atualizar agora" na
   // telinha de nova versão disponível.

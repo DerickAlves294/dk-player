@@ -25,6 +25,11 @@ const FIREBASE_CONFIG = {
   appId: "COLE_AQUI",
 };
 
+// >>> Quando a área de Amigos estiver pronta pra ser lançada pra valer,
+// troque pra "false" — o fluxo normal (perfil, pedidos, lista de amigos)
+// volta a funcionar e o placeholder "Em breve" some sozinho.
+const FRIENDS_COMING_SOON = true;
+
 let db = null;
 let fbAuth = null;
 const Friends = {
@@ -414,8 +419,10 @@ function openFriendsScreen(){
   const screen = document.getElementById("friendsScreen");
   if(!screen) return;
   screen.classList.add("show");
+  screen.classList.toggle("coming-soon", FRIENDS_COMING_SOON);
   screen.scrollTop = 0;
   if(typeof collapseSidebarIfNarrow === "function") collapseSidebarIfNarrow();
+  if(FRIENDS_COMING_SOON) return; // tela "Em breve": nada pra carregar ainda
   renderProfileCard();
   renderFriendRequests();
   renderFriendsList();
@@ -440,6 +447,10 @@ document.addEventListener("keydown", e=>{
    INICIALIZAÇÃO
 ============================================================ */
 async function initFriends(){
+  // Enquanto a área de Amigos está marcada como "Em breve", nem tenta
+  // conectar no Firebase — evita esforço à toa e o aviso no console
+  // (o FIREBASE_CONFIG nem precisa estar preenchido ainda).
+  if(FRIENDS_COMING_SOON) return;
   try{
     firebase.initializeApp(FIREBASE_CONFIG);
     fbAuth = firebase.auth();

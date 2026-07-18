@@ -221,6 +221,14 @@
       <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
       <button class="sidebar-change-folder-btn" id="changeFolderBtn" style="display:none;">Trocar pasta</button>
     </div>
+    <div class="settings-block">
+      <div class="settings-block-title">Atualizações</div>
+      <div class="status-pill" id="updateCheckStatusPill">
+        <span class="status-dot" id="updateCheckDot"></span>
+        <span id="updateCheckStatusText">Versão atual: —</span>
+      </div>
+      <button class="sidebar-change-folder-btn" id="checkUpdateBtn" type="button">Verificar atualizações</button>
+    </div>
     <div class="about-screen-bottom-spacer"></div>
   </div>
 </div>
@@ -231,29 +239,44 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
   </button>
   <div class="about-screen-content" style="width:min(420px,92vw);">
-    <div class="about-screen-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    </div>
-    <div class="about-screen-name">Amigos</div>
-    <div class="friends-profile-card" id="friendsProfileCard"></div>
-
-    <div class="settings-block">
-      <div class="settings-block-title">Adicionar amigo</div>
-      <div class="friend-search-row">
-        <input type="text" id="friendSearchInput" placeholder="nome#0000" maxlength="40"/>
-        <button class="btn btn-primary" id="friendSearchBtn" type="button">Adicionar</button>
+    <!-- Conteúdo real da área de Amigos. Fica escondido enquanto
+         FRIENDS_COMING_SOON (em friends.js) estiver true — ver bloco
+         "Em breve" logo abaixo. -->
+    <div id="friendsRealContent">
+      <div class="about-screen-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       </div>
-      <div id="friendSearchStatus" class="friend-search-status"></div>
+      <div class="about-screen-name">Amigos</div>
+      <div class="friends-profile-card" id="friendsProfileCard"></div>
+
+      <div class="settings-block">
+        <div class="settings-block-title">Adicionar amigo</div>
+        <div class="friend-search-row">
+          <input type="text" id="friendSearchInput" placeholder="nome#0000" maxlength="40"/>
+          <button class="btn btn-primary" id="friendSearchBtn" type="button">Adicionar</button>
+        </div>
+        <div id="friendSearchStatus" class="friend-search-status"></div>
+      </div>
+
+      <div class="settings-block" id="friendRequestsBlock" style="display:none;">
+        <div class="settings-block-title">Pedidos pendentes</div>
+        <div id="friendRequestsList" class="friends-list"></div>
+      </div>
+
+      <div class="settings-block">
+        <div class="settings-block-title">Seus amigos</div>
+        <div id="friendsList" class="friends-list"></div>
+      </div>
     </div>
 
-    <div class="settings-block" id="friendRequestsBlock" style="display:none;">
-      <div class="settings-block-title">Pedidos pendentes</div>
-      <div id="friendRequestsList" class="friends-list"></div>
-    </div>
-
-    <div class="settings-block">
-      <div class="settings-block-title">Seus amigos</div>
-      <div id="friendsList" class="friends-list"></div>
+    <!-- Placeholder "Em breve", centralizado na tela. Mostrado enquanto
+         FRIENDS_COMING_SOON for true em friends.js. -->
+    <div class="friends-coming-soon" id="friendsComingSoon">
+      <div class="friends-coming-soon-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div class="friends-coming-soon-title">Em breve</div>
+      <div class="friends-coming-soon-sub">Estamos preparando a área de amigos. Em breve você vai poder adicionar amigos e ouvir música junto por aqui.</div>
     </div>
 
     <div class="about-screen-bottom-spacer"></div>
