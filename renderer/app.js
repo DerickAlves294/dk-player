@@ -378,7 +378,7 @@ document.querySelectorAll("#colorPickerGrid input[type=color]").forEach(input=>{
     saveThemeSettings();
   });
 });
-document.getElementById("resetThemeBtn").addEventListener("click", ()=>{
+document.getElementById("resetThemeBtn")?.addEventListener("click", ()=>{
   S.customColors = {};
   applyTheme();
   saveThemeSettings();
