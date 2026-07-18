@@ -63,6 +63,33 @@ const Store = {
 };
 
 /* ============================================================
+   PERSONALIZAÇÃO — tema (claro/escuro) e cores individuais
+   Só existem 4 cores "base" pra mexer (fundo, superfície, texto,
+   destaque) — todo o resto (superfície-2/3, bordas, texto
+   dim/faint, accent-soft) é derivado delas no próprio CSS via
+   color-mix(), então aplicar um tema aqui é só escrever essas 4
+   como propriedades customizadas inline no :root.
+============================================================ */
+const THEME_DEFAULTS = {
+  dark:  { bg:"#0B0D10", surface:"#14171C", text:"#EDEFF2", accent:"#E8B04B" },
+  light: { bg:"#FAF9F7", surface:"#FFFFFF", text:"#1B1D21", accent:"#E8B04B" },
+};
+function hexToRgb(hex){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||"");
+  if(!m) return {r:0,g:0,b:0};
+  return {r:parseInt(m[1],16), g:parseInt(m[2],16), b:parseInt(m[3],16)};
+}
+// Decide se o texto em cima do botão "cheio" de --accent deve ser escuro
+// ou claro, pra continuar legível não importa qual cor de destaque a
+// pessoa escolher (antes era um #1a1408 fixo, que só funcionava porque o
+// laranja padrão era sempre claro o bastante).
+function contrastTextFor(hex){
+  const {r,g,b} = hexToRgb(hex);
+  const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+  return luminance > 0.6 ? "#1a1408" : "#F5F3EF";
+}
+
+/* ============================================================
    TOAST — small feedback message for actions like "adicionado à playlist"
 ============================================================ */
 function showToast(msg){
@@ -240,6 +267,8 @@ const S = {
   volume:0.9,
   isPlaying:false,
   appVersion:null,
+  themeMode:"dark",     // dark | light
+  customColors:{},      // só as chaves (bg/surface/text/accent) que o usuário mudou manualmente
 };
 
 const audio = document.getElementById("audio");
@@ -296,6 +325,65 @@ async function loadTrackOriginalPaths(){
   const m = await Store.get("trackOriginalPaths");
   S.trackOriginalPaths = (m && typeof m==="object") ? m : {};
 }
+
+function currentThemeColors(){
+  const base = THEME_DEFAULTS[S.themeMode] || THEME_DEFAULTS.dark;
+  return { ...base, ...S.customColors };
+}
+// Escreve as 4 cores base como propriedades customizadas inline no :root
+// (têm prioridade sobre o :root do CSS) e recalcula o contraste do texto
+// em cima do destaque. Tudo que é derivado (superfície-2/3, bordas,
+// texto-dim/faint, accent-soft) se ajusta sozinho via color-mix() no CSS.
+function applyTheme(){
+  const colors = currentThemeColors();
+  const root = document.documentElement.style;
+  root.setProperty("--bg", colors.bg);
+  root.setProperty("--surface", colors.surface);
+  root.setProperty("--text", colors.text);
+  root.setProperty("--accent", colors.accent);
+  root.setProperty("--accent-contrast", contrastTextFor(colors.accent));
+
+  document.querySelectorAll(".theme-toggle-btn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.theme===S.themeMode);
+  });
+  const colorInputs = {colorAccent:"accent", colorBg:"bg", colorSurface:"surface", colorText:"text"};
+  Object.entries(colorInputs).forEach(([id,key])=>{
+    const el = document.getElementById(id);
+    if(el) el.value = colors[key];
+  });
+}
+async function saveThemeSettings(){
+  await Store.set("theme", {mode:S.themeMode, colors:S.customColors});
+}
+async function loadThemeSettings(){
+  const saved = await Store.get("theme");
+  if(saved){
+    S.themeMode = saved.mode==="light" ? "light" : "dark";
+    S.customColors = (saved.colors && typeof saved.colors==="object") ? saved.colors : {};
+  }
+  applyTheme();
+}
+document.querySelectorAll(".theme-toggle-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    if(S.themeMode===btn.dataset.theme) return;
+    S.themeMode = btn.dataset.theme;
+    applyTheme();
+    saveThemeSettings();
+  });
+});
+document.querySelectorAll("#colorPickerGrid input[type=color]").forEach(input=>{
+  input.addEventListener("input", ()=>{
+    S.customColors[input.dataset.colorKey] = input.value;
+    applyTheme();
+    saveThemeSettings();
+  });
+});
+document.getElementById("resetThemeBtn").addEventListener("click", ()=>{
+  S.customColors = {};
+  applyTheme();
+  saveThemeSettings();
+  showToast("Cores restauradas ao padrão");
+});
 
 /* ============================================================
    PASTAS FÍSICAS DE PLAYLIST
@@ -556,6 +644,7 @@ document.getElementById("addMusicBtn").addEventListener("click", async ()=>{
    INITIAL LOAD
 ============================================================ */
 async function init(){
+  await loadThemeSettings();
   await loadPlaylists();
   await loadTrackOriginalPaths();
   await loadArtistOrder();
@@ -595,23 +684,58 @@ async function init(){
 ============================================================ */
 function renderSidebar(){
   document.querySelectorAll(".nav-item").forEach(el=>{
-    el.classList.toggle("active", el.dataset.view===S.view);
-  });
-  const list = document.getElementById("playlistNavList");
-  list.innerHTML = S.playlists.map(p=>`
-    <button class="playlist-nav-item ${S.view==="playlist-detail"&&S.detailKey===p.id?"active":""}" data-playlist-id="${p.id}">${escapeHtml(p.name)}</button>
-  `).join("");
-  list.querySelectorAll(".playlist-nav-item").forEach(el=>{
-    el.addEventListener("click", ()=>{
-      S.view="playlist-detail"; S.detailKey=el.dataset.playlistId; render();
-    });
+    const active = el.dataset.view===S.view || (el.dataset.view==="playlists" && S.view==="playlist-detail");
+    el.classList.toggle("active", active);
   });
 }
 
 document.querySelectorAll(".nav-item[data-view]").forEach(el=>{
-  el.addEventListener("click", ()=>{ S.view = el.dataset.view; S.detailKey=null; render(); });
+  el.addEventListener("click", ()=>{
+    S.view = el.dataset.view; S.detailKey=null; render();
+    collapseSidebarIfNarrow();
+  });
 });
-document.getElementById("newPlaylistBtn").addEventListener("click", ()=> openPlaylistModal(null));
+
+/* ============================================================
+   SIDEBAR — expandir/recolher (botão de menu mora dentro da própria
+   sidebar, sempre visível). A sidebar nunca some de verdade: recolhida,
+   vira uma trilha estreita só com os ícones clicáveis + o botão de
+   menu no topo. Em telas largas isso encolhe/expande a coluna de
+   verdade (lembra a preferência entre sessões); em telas estreitas a
+   trilha fica fixa por cima do conteúdo e só a versão expandida vira
+   um flyout temporário (com fundo escurecido) que começa sempre
+   recolhido.
+============================================================ */
+const NARROW_SIDEBAR_QUERY = window.matchMedia("(max-width:860px)");
+function setSidebarExpanded(expanded){
+  document.getElementById("app").classList.toggle("sidebar-expanded", expanded);
+  document.getElementById("sidebarBackdrop").classList.toggle("show", expanded && NARROW_SIDEBAR_QUERY.matches);
+}
+function collapseSidebarIfNarrow(){
+  // Só recolhe automaticamente (ex: ao navegar) quando está em modo
+  // flyout — em telas largas a sidebar é fixa e não deve recolher
+  // sozinha a cada clique.
+  if(NARROW_SIDEBAR_QUERY.matches) setSidebarExpanded(false);
+}
+(async function initSidebar(){
+  const stored = await Store.get("sidebarOpen");
+  const initialExpanded = NARROW_SIDEBAR_QUERY.matches ? false : (stored===null ? true : !!stored);
+  setSidebarExpanded(initialExpanded);
+
+  document.getElementById("sidebarToggleBtn").addEventListener("click", async (e)=>{
+    const nowExpanded = !document.getElementById("app").classList.contains("sidebar-expanded");
+    setSidebarExpanded(nowExpanded);
+    if(!NARROW_SIDEBAR_QUERY.matches) await Store.set("sidebarOpen", nowExpanded);
+    // Reinicia a animação de girada a cada clique, mesmo em cliques
+    // seguidos rápidos (sem isso, remover+adicionar a mesma classe sem
+    // forçar reflow no meio não reinicia a animação já em andamento).
+    const btn = e.currentTarget;
+    btn.classList.remove("spin");
+    void btn.offsetWidth;
+    btn.classList.add("spin");
+  });
+  document.getElementById("sidebarBackdrop").addEventListener("click", collapseSidebarIfNarrow);
+})();
 
 /* ============================================================
    RENDERING — main content
@@ -730,7 +854,7 @@ function render(){
     html += tracks.length ? trackRowsHtml(tracks) : emptyStateHtml("all");
   }
   else if(S.view==="playlists"){
-    html += `<div class="content-header"><div class="content-title">Playlists</div></div>`;
+    html += `<div class="content-header"><div class="content-title">Playlists</div><button class="btn btn-primary" id="newPlaylistBtn">+ Nova playlist</button></div>`;
     if(S.playlists.length){
       html += `<div class="grid">`+ S.playlists.map(p=>{
         const tracks = p.trackIds.map(id=>trackById(id)).filter(Boolean);
@@ -741,7 +865,7 @@ function render(){
         </div>`;
       }).join("") + `</div>`;
     } else {
-      html += `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><h3>Nenhuma playlist ainda</h3><p>Crie uma playlist na barra lateral para organizar suas músicas.</p></div>`;
+      html += `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><h3>Nenhuma playlist ainda</h3><p>Clique em "Nova playlist" acima para organizar suas músicas.</p></div>`;
     }
   }
   else if(S.view==="playlist-detail"){
@@ -865,6 +989,8 @@ function attachContentEvents(){
   content.querySelectorAll("[data-open-playlist]").forEach(el=>{
     el.addEventListener("click", ()=>{ S.view="playlist-detail"; S.detailKey=el.dataset.openPlaylist; render(); });
   });
+  const newPlaylistBtn = content.querySelector("#newPlaylistBtn");
+  if(newPlaylistBtn) newPlaylistBtn.addEventListener("click", ()=> openPlaylistModal(null));
   const back = content.querySelector("#backBtn");
   if(back) back.addEventListener("click", ()=>{
     if(S.view==="artist-detail") S.view="artists";
@@ -1000,7 +1126,7 @@ function updateDiscordPresence(){
   // amigos realmente querem ver), ou o álbum da música quando não está
   // em nenhuma party.
   if(inParty) activity.largeImageText = "Ouvindo Junto com um amigo";
-  else if(!listeningToPeer && t?.album) activity.largeImageText = t.album;
+  else if(!listeningToPeer && t?.album) activity.largeImageText = `Álbum: ${t.album}`;
 
   // Timestamps só fazem sentido enquanto está tocando; pausado, o Discord
   // mostra "Pausado" sem barra de progresso rodando se a gente omitir eles.
@@ -1521,6 +1647,11 @@ function openPlaylistModal(playlistId, addTrackIdAfterCreate){
    notas do release do GitHub esteja vazio.
 ============================================================ */
 const CHANGELOG = [
+{
+  version: "1.1.2",
+  date: "2026",
+  notes: "• Corrige diversos bugs e melhora a estabilidade geral do aplicativo.\n• Ajusta o alinhamento visual com refinamentos milimétricos em toda a interface.\n• A sidebar agora é responsiva para telas menores e pode ser recolhida ou expandida ao clicar no ícone.\n• O botão de >Trocar pasta< foi movido para o novo menu de Configurações.\n• Adiciona o sistema de personalização livre da interface."
+},
   {
     version: "1.1.1",
     date: "2026",
@@ -1576,6 +1707,18 @@ function closeAboutScreen(){
 }
 document.getElementById("aboutBtn").addEventListener("click", openAboutScreen);
 document.getElementById("aboutBackBtn").addEventListener("click", closeAboutScreen);
+
+function openSettingsScreen(){
+  const screen = document.getElementById("settingsScreen");
+  screen.classList.add("show");
+  screen.scrollTop = 0;
+  collapseSidebarIfNarrow();
+}
+function closeSettingsScreen(){
+  document.getElementById("settingsScreen").classList.remove("show");
+}
+document.getElementById("settingsBtn").addEventListener("click", openSettingsScreen);
+document.getElementById("settingsBackBtn").addEventListener("click", closeSettingsScreen);
 
 /* ============================================================
    ATUALIZAÇÕES (auto-updater)
@@ -1645,6 +1788,15 @@ document.addEventListener("keydown", e=>{
   }
 
   if(e.key==="Escape"){
+    if(NARROW_SIDEBAR_QUERY.matches && document.getElementById("app").classList.contains("sidebar-expanded")){
+      collapseSidebarIfNarrow();
+      return;
+    }
+    const settingsScreen = document.getElementById("settingsScreen");
+    if(settingsScreen.classList.contains("show")){
+      closeSettingsScreen();
+      return;
+    }
     const aboutScreen = document.getElementById("aboutScreen");
     if(aboutScreen.classList.contains("show")){
       closeAboutScreen();

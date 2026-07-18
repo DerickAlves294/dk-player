@@ -12,41 +12,53 @@
 
 
 <div id="app">
-  <aside class="sidebar">
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <div class="app-body">
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <svg class="disc" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14.5" fill="#1C2027" stroke="var(--accent)" stroke-width="1.5"/><circle cx="16" cy="16" r="5" fill="var(--accent)"/><circle cx="16" cy="16" r="1.6" fill="#0B0D10"/></svg>
+      <button class="disc-toggle-btn" id="sidebarToggleBtn" title="Recolher/expandir menu">
+        <svg class="disc" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="14.5" fill="#1C2027" stroke="var(--accent)" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="10.5" stroke="rgba(255,255,255,0.09)" stroke-width="1"/>
+          <path d="M16 2.5A13.5 13.5 0 0 1 26.6 8.3" stroke="rgba(255,255,255,0.45)" stroke-width="1.4" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
+          <circle cx="16" cy="16" r="1.6" fill="#0B0D10"/>
+          <circle cx="24.3" cy="9.7" r="1.15" fill="rgba(255,255,255,0.6)"/>
+        </svg>
+      </button>
       <span>DK Player</span>
     </div>
     <nav class="nav">
-      <button class="nav-item" data-view="all">
+      <button class="nav-item" data-view="all" title="Todas as músicas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        Todas as músicas
+        <span>Todas as músicas</span>
       </button>
-      <button class="nav-item" data-view="artists">
+      <button class="nav-item" data-view="artists" title="Artistas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Artistas
+        <span>Artistas</span>
       </button>
-      <button class="nav-item" data-view="albums">
+      <button class="nav-item" data-view="albums" title="Álbuns">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-        Álbuns
+        <span>Álbuns</span>
+      </button>
+      <button class="nav-item" data-view="playlists" title="Playlists">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/></svg>
+        <span>Playlists</span>
       </button>
     </nav>
-    <div style="display:flex;flex-direction:column;min-height:0;flex:1;">
-      <div class="nav-section-title">Playlists</div>
-      <div class="playlist-nav-list" id="playlistNavList"></div>
-      <button class="new-playlist-btn" id="newPlaylistBtn">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-        Nova playlist
-      </button>
-      <div class="sidebar-library-status">
-        <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
-        <button class="sidebar-change-folder-btn" id="changeFolderBtn" style="display:none;">Trocar pasta</button>
-      </div>
-    </div>
     <div class="sidebar-footer">
-      <div class="sidebar-version" id="sidebarVersionTag">v1.0.1</div>
-      <div class="sidebar-dev">Desenvolvido por <strong>Dérick Alves</strong></div>
-      <button class="sidebar-about-btn" id="aboutBtn">Sobre o DK Player</button>
+      <div class="sidebar-footer-text">
+        <div class="sidebar-version" id="sidebarVersionTag">v1.0.1</div>
+        <div class="sidebar-dev">Desenvolvido por <strong>Dérick Alves</strong></div>
+      </div>
+      <button class="sidebar-about-btn" id="settingsBtn" title="Configurações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span>Configurações</span>
+      </button>
+      <button class="sidebar-about-btn" id="aboutBtn" title="Atualizações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        <span>Atualizações</span>
+      </button>
     </div>
   </aside>
 
@@ -65,6 +77,7 @@
       </button>
     </div>
     <div class="content" id="content"></div>
+  </div>
   </div>
 
   <div class="miniplayer" id="miniplayer" style="display:none;">
@@ -155,6 +168,57 @@
     </div>
   </div>
   <div class="queue-list" id="queueList"></div>
+</div>
+
+<!-- Configurações (tela cheia) -->
+<div class="about-screen" id="settingsScreen">
+  <button class="about-back-btn" id="settingsBackBtn" title="Voltar (Esc)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+  <div class="about-screen-content">
+    <div class="about-screen-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    </div>
+    <div class="about-screen-name">Configurações</div>
+    <div class="settings-block">
+      <div class="settings-block-title">Aparência</div>
+      <div class="theme-toggle" id="themeToggle">
+        <button class="theme-toggle-btn" data-theme="dark" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+          Escuro
+        </button>
+        <button class="theme-toggle-btn" data-theme="light" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          Claro
+        </button>
+      </div>
+      <div class="color-picker-grid" id="colorPickerGrid">
+        <label class="color-picker-item">
+          <span>Destaque</span>
+          <input type="color" id="colorAccent" data-color-key="accent"/>
+        </label>
+        <label class="color-picker-item">
+          <span>Fundo</span>
+          <input type="color" id="colorBg" data-color-key="bg"/>
+        </label>
+        <label class="color-picker-item">
+          <span>Superfície</span>
+          <input type="color" id="colorSurface" data-color-key="surface"/>
+        </label>
+        <label class="color-picker-item">
+          <span>Texto</span>
+          <input type="color" id="colorText" data-color-key="text"/>
+        </label>
+      </div>
+      <button class="sidebar-change-folder-btn" id="resetThemeBtn" type="button">Restaurar padrão</button>
+    </div>
+    <div class="settings-block">
+      <div class="settings-block-title">Biblioteca de músicas</div>
+      <div class="status-pill" id="statusPill"><span class="status-dot"></span><span id="statusText">Nenhuma pasta selecionada</span></div>
+      <button class="sidebar-change-folder-btn" id="changeFolderBtn" style="display:none;">Trocar pasta</button>
+    </div>
+    <div class="about-screen-bottom-spacer"></div>
+  </div>
 </div>
 
 <!-- Sobre (tela cheia) -->
