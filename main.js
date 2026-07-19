@@ -72,11 +72,14 @@ let mainWindow = null;
    (re)conectar.
 ============================================================ */
 const discordClient = new DiscordRPC({ clientId: DISCORD_CLIENT_ID });
+discordClient.setMaxListeners?.(20); // rede de segurança — o fix de verdade é o discordConnecting abaixo
 let discordConnected = false;
+let discordConnecting = false; // evita empilhar tentativas de login() sobrepostas (era a causa do vazamento de listeners)
 let lastActivity = null;
 
 discordClient.on("ready", () => {
   discordConnected = true;
+  discordConnecting = false;
   console.log("Discord RPC conectado");
   if (lastActivity) {
     discordClient.user?.setActivity(lastActivity).catch((e) => console.warn("discord setActivity falhou", e));
@@ -85,13 +88,26 @@ discordClient.on("ready", () => {
 
 discordClient.on("disconnected", () => {
   discordConnected = false;
+  discordConnecting = false;
 });
 
 function connectDiscordRPC() {
-  if (discordConnected) return;
-  discordClient.login().catch(() => {
-    // Normal se o Discord desktop não estiver aberto; tenta de novo depois.
-  });
+  if (discordConnected || discordConnecting) return;
+  discordConnecting = true;
+  discordClient
+    .login()
+    .catch(() => {
+      // Normal se o Discord desktop não estiver aberto; tenta de novo depois.
+    })
+    .finally(() => {
+      discordConnecting = false;
+      // Bug conhecido da @xhayper/discord-rpc: quando connect() falha ou dá
+      // timeout, o listener once("connected") interno dela NUNCA é removido
+      // (só é limpo automaticamente quando o evento realmente dispara). Sem
+      // isso aqui, cada tentativa que falha deixa um listener morto pra
+      // sempre — era a causa raiz do vazamento, não a sobreposição de chamadas.
+      if (!discordConnected) discordClient.removeAllListeners("connected");
+    });
 }
 connectDiscordRPC();
 setInterval(connectDiscordRPC, 15000);

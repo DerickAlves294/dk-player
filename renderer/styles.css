@@ -201,35 +201,105 @@
   .color-picker-item input[type=color]::-webkit-color-swatch{border:2px solid var(--border);border-radius:50%;}
 
   /* ---------- Amigos ---------- */
-  .friends-profile-card{
-    margin-top:14px;padding:10px 16px;border-radius:20px;
-    background:var(--surface-2);border:1px solid var(--border);
-    font-size:13px;color:var(--text-dim);
+  #friendsScreen .about-screen-content{
+    width:min(640px,92vw); /* mais largo que Configurações/Sobre — é uma lista, não um cartão centralizado */
+    align-items:stretch;text-align:left;
+    padding-top:38px; /* compensa o .friends-header ter virado fixed (saiu do fluxo normal) */
   }
-  .friend-tag{color:var(--text-faint);font-family:'JetBrains Mono',monospace;font-size:.92em;margin-left:1px;}
-  .friend-search-row{display:flex;gap:8px;width:100%;}
-  .friend-search-row input{
-    flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;
-    padding:10px 12px;color:var(--text);font-size:13.5px;outline:none;
+  .friends-header{
+    position:fixed;top:22px;left:28px;right:28px;z-index:5;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+  }
+  .friends-header-title{display:flex;align-items:center;gap:12px;}
+  /* O botão de voltar do Amigos vive dentro do título (em vez de fixo no
+     canto como em Configurações/Sobre) — por isso cancela o position:fixed
+     genérico do .about-back-btn só aqui. */
+  .friends-header-title #friendsBackBtn{position:static;top:auto;left:auto;background:transparent;margin-right:2px;}
+  .friends-header-title svg{width:26px;height:26px;color:var(--accent);flex-shrink:0;}
+  .friends-header-title h2{font-size:20px;font-weight:800;margin:0;}
+  .friends-header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .friends-icon-btn{display:flex;align-items:center;gap:6px;padding:9px 14px;font-size:12.5px;}
+  .friends-icon-btn svg{width:16px;height:16px;}
+  .friends-section-title{
+    font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;
+    color:var(--text-faint);margin:22px 0 10px;
+  }
+  .friends-section-title:first-child{margin-top:0;}
+
+  /* ---------- Entrar / criar conta ---------- */
+  .friends-auth{display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;max-width:340px;margin:24px auto 0;gap:12px;}
+  .friends-auth-icon{width:44px;height:44px;color:var(--accent);opacity:.9;margin-bottom:2px;}
+  .friends-auth-icon svg{width:100%;height:100%;}
+  .friends-auth h3{font-size:18px;font-weight:800;margin:0;}
+  .friends-auth-sub{font-size:12.5px;color:var(--text-faint);line-height:1.5;margin:0 0 6px;}
+  .friends-auth-field{width:100%;text-align:left;}
+  .friends-auth-field input{
+    width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+    padding:11px 14px;color:var(--text);font-size:13.5px;outline:none;
     transition:border-color .15s var(--ease);
   }
-  .friend-search-row input:focus{border-color:var(--accent);}
-  .friend-search-status{font-size:12px;color:var(--text-faint);min-height:14px;text-align:left;width:100%;}
+  .friends-auth-field input:focus{border-color:var(--accent);}
+  .friends-auth-hint{font-size:11px;color:var(--text-faint);margin-top:5px;line-height:1.4;}
+  .friends-auth-error{font-size:12px;color:var(--danger);min-height:14px;}
+  .friends-auth-submit{width:100%;justify-content:center;padding:11px;font-size:13.5px;margin-top:2px;}
+  .friends-auth-toggle{font-size:12.5px;color:var(--text-faint);}
+  .friends-auth-toggle button{color:var(--accent);font-weight:700;margin-left:4px;}
+  .friends-auth-toggle button:hover{text-decoration:underline;}
+
+  /* ---------- Lista de amigos ---------- */
   .friends-list{display:flex;flex-direction:column;gap:8px;width:100%;}
   .friend-item{
-    display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+    display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;
     background:var(--surface-2);border:1px solid var(--border);text-align:left;
+    transition:border-color .15s var(--ease);
   }
+  .friend-item:hover{border-color:color-mix(in srgb, var(--border), var(--accent) 30%);}
+  .friend-avatar-wrap{position:relative;flex-shrink:0;}
   .friend-avatar{
-    width:36px;height:36px;border-radius:50%;flex-shrink:0;
+    width:42px;height:42px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
-    background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12.5px;
+    background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:14px;
   }
+  .friend-avatar-status{
+    position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;
+    background:var(--text-faint);border:2.5px solid var(--surface-2);
+  }
+  .friend-avatar-status.online{background:#57C278;}
   .friend-meta{flex:1;min-width:0;}
-  .friend-name{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .friend-sub{font-size:11.5px;color:var(--text-faint);display:flex;align-items:center;gap:6px;margin-top:2px;}
+  .friend-name-row{display:flex;align-items:baseline;gap:6px;}
+  .friend-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .friend-code{color:var(--text-faint);font-family:'JetBrains Mono',monospace;font-size:11px;flex-shrink:0;}
+  .friend-status-line{
+    font-size:12px;color:var(--text-faint);margin-top:3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .friend-status-line.playing{color:var(--accent);}
   .friend-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
-  .friend-actions .btn{padding:7px 12px;font-size:12px;}
+  .friend-actions .btn{padding:7px 13px;font-size:12px;}
+  .friend-menu-btn{
+    width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    color:var(--text-faint);flex-shrink:0;
+  }
+  .friend-menu-btn:hover{color:var(--text);background:var(--surface-3);}
+  .friend-menu-btn svg{width:16px;height:16px;}
+  .friends-empty{text-align:center;padding:36px 20px;color:var(--text-faint);font-size:13px;line-height:1.6;}
+
+  /* ---------- Modais de Amigos (perfil / adicionar / excluir conta) ---------- */
+  .friend-profile-avatar{
+    width:64px;height:64px;border-radius:50%;margin:0 auto 14px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:22px;
+  }
+  .friend-profile-field{margin-bottom:14px;text-align:left;}
+  .friend-profile-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);font-weight:700;margin-bottom:6px;}
+  .friend-profile-static{
+    font-size:13.5px;color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:10px 13px;font-family:'JetBrains Mono',monospace;
+  }
+  .friend-profile-danger-zone{margin-top:22px;padding-top:18px;border-top:1px solid var(--border);}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-danger:hover{filter:brightness(1.08);}
+
 
   /* ---------- Banner de convite pro Ouvir Junto ---------- */
   .party-invite-banner{
@@ -581,7 +651,7 @@
 
   /* ---------- Modal (playlist create/rename, folder picker prompt) ---------- */
   .modal-backdrop{
-    position:fixed;inset:0;background:rgba(6,7,9,0.7);display:flex;align-items:center;justify-content:center;z-index:250;
+    position:fixed;inset:0;background:rgba(6,7,9,0.7);display:flex;align-items:center;justify-content:center;z-index:450;
   }
   .modal{
     background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:24px;
@@ -681,6 +751,7 @@
     opacity:0;pointer-events:none;transition:opacity .16s var(--ease);
   }
   .about-screen.show{opacity:1;pointer-events:auto;}
+  #friendsScreen{padding-top:40px;} /* sem botão de voltar fixo no canto aqui, não precisa do respiro de 76px */
   .about-back-btn{
     /* position:fixed (não absolute) pra continuar ancorado no canto
        enquanto o conteúdo abaixo dele rola. */
@@ -717,7 +788,7 @@
   #friendsScreen.coming-soon #friendsRealContent{display:none;}
   .friends-coming-soon{display:none;flex-direction:column;align-items:center;text-align:center;}
   #friendsScreen.coming-soon .friends-coming-soon{display:flex;}
-  #friendsScreen.coming-soon .about-screen-content{justify-content:center;min-height:calc(100vh - 76px);}
+  #friendsScreen.coming-soon .about-screen-content{justify-content:center;min-height:calc(100vh - 40px);}
   .friends-coming-soon-icon{width:48px;height:48px;color:var(--accent);margin-bottom:18px;opacity:.85;}
   .friends-coming-soon-icon svg{width:100%;height:100%;}
   .friends-coming-soon-title{font-size:20px;font-weight:800;}
